@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Float, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Date, DateTime, Float, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.db import Base
@@ -112,3 +112,19 @@ class RentedListingHistory(Base):
     source_window_end: Mapped[date | None] = mapped_column(Date)
     memorialized_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     payload_json: Mapped[str] = mapped_column(Text)
+
+
+class PipelineRun(Base):
+    """One row per ``pipeline.py`` invocation (scheduled or manual)."""
+
+    __tablename__ = "pipeline_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_key: Mapped[str] = mapped_column(String(64), index=True)
+    argv_json: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    hostname: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    git_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    detail_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)

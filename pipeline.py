@@ -1,4 +1,5 @@
 import argparse
+from argparse import Namespace
 import json
 import subprocess
 import sys
@@ -12,6 +13,7 @@ from clean_data import run_cleaning_jobs
 from build_rent_model import build_rent_models
 from data_quality import validate_monthly_outputs, validate_daily_active_outputs
 from snapshot_manager import create_monthly_snapshot, create_daily_active_snapshot
+from storage_paths import clear_sold_and_rental_raw_downloads
 from historical_policy import (
     DateWindow,
     backfill_window,
@@ -57,6 +59,11 @@ def _run_sold_rented_scrape_for_window(
 ) -> None:
     timeframe = to_mls_timeframe(window)
     if run_scrapers:
+        cleared = clear_sold_and_rental_raw_downloads(PROJECT_DIR)
+        print(
+            "Cleared raw sold/rental downloads before scrape: "
+            f"sold={cleared['sold']} file(s), rentals={cleared['rentals']} file(s)"
+        )
         sold_args = ["--timeframe", timeframe]
         rented_args = ["--timeframe", timeframe, "--from-start"]
         if headless:
@@ -95,6 +102,11 @@ def _memorialize_window(window: DateWindow) -> tuple[int, int]:
 def run_monthly_pipeline(run_scrapers: bool) -> None:
     print("=== MONTHLY PIPELINE START ===")
     if run_scrapers:
+        cleared = clear_sold_and_rental_raw_downloads(PROJECT_DIR)
+        print(
+            "Cleared raw sold/rental downloads before scrape: "
+            f"sold={cleared['sold']} file(s), rentals={cleared['rentals']} file(s)"
+        )
         _run_script("scrape_mls_sold.py", role="Scraper")
         _run_script("scrape_mls_rented.py", role="Scraper")
 
@@ -109,7 +121,7 @@ def run_monthly_pipeline(run_scrapers: bool) -> None:
     )
     build_rent_models()
     validate_monthly_outputs()
-    create_monthly_snapshot()
+    create_monthly_snapshot(folder_name=f"data-{date.today():%Y-%m}-monthly-run")
     print("=== MONTHLY PIPELINE COMPLETE ===")
 
 
@@ -167,6 +179,7 @@ def run_backfill_historical(
         print(f"Processing backfill window {window.start}..{window.end}")
         _run_sold_rented_scrape_for_window(window=window, run_scrapers=run_scrapers, headless=headless)
         _memorialize_window(window)
+        create_monthly_snapshot(folder_name=f"data-{window.end:%Y-%m}")
         _save_json(
             BACKFILL_CHECKPOINT,
             {
@@ -202,6 +215,7 @@ def run_weekly_sold_rented(
                 headless=headless,
             )
             _memorialize_window(window)
+            create_monthly_snapshot(folder_name=f"data-{window.end:%Y-%m}")
             _save_json(
                 MEMORIALIZATION_STATE,
                 {
@@ -219,8 +233,41 @@ def run_weekly_sold_rented(
     build_rent_models()
     validate_monthly_outputs()
     _run_script("load_to_db.py", role="DB loader")
-    create_monthly_snapshot()
+    create_monthly_snapshot(folder_name=f"data-{hot.end:%Y-%m}-rolling")
     print("=== WEEKLY SOLD/RENTED COMPLETE ===")
+
+
+def _dispatch_command(args: Namespace) -> None:
+    if args.command == "monthly":
+        run_monthly_pipeline(run_scrapers=args.with_scrape)
+    elif args.command == "weekly-sold-rented":
+        run_weekly_sold_rented(
+            run_scrapers=not args.no_scrape,
+            headless=args.headless,
+        )
+    elif args.command == "backfill-historical":
+        run_backfill_historical(
+            years=args.years,
+            run_scrapers=not args.no_scrape,
+            headless=args.headless,
+            resume=args.resume,
+        )
+    elif args.command == "daily-active":
+        run_daily_active_pipeline_with_geocode(
+            run_scraper=args.with_scrape,
+            run_geocode=args.with_geocode,
+            headless=args.headless,
+        )
+    elif args.command == "validate-monthly":
+        validate_monthly_outputs()
+    elif args.command == "validate-daily-active":
+        validate_daily_active_outputs()
+    elif args.command == "load-db":
+        _run_script("load_to_db.py", role="DB loader")
+    elif args.command == "geocode-active":
+        _run_script("geocode_active.py", role="Geocoder")
+    else:  # pragma: no cover
+        raise ValueError(f"Unknown command: {args.command}")
 
 
 def main() -> None:
@@ -298,34 +345,28 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.command == "monthly":
-        run_monthly_pipeline(run_scrapers=args.with_scrape)
-    elif args.command == "weekly-sold-rented":
-        run_weekly_sold_rented(
-            run_scrapers=not args.no_scrape,
-            headless=args.headless,
-        )
-    elif args.command == "backfill-historical":
-        run_backfill_historical(
-            years=args.years,
-            run_scrapers=not args.no_scrape,
-            headless=args.headless,
-            resume=args.resume,
-        )
-    elif args.command == "daily-active":
-        run_daily_active_pipeline_with_geocode(
-            run_scraper=args.with_scrape,
-            run_geocode=args.with_geocode,
-            headless=args.headless,
-        )
-    elif args.command == "validate-monthly":
-        validate_monthly_outputs()
-    elif args.command == "validate-daily-active":
-        validate_daily_active_outputs()
-    elif args.command == "load-db":
-        _run_script("load_to_db.py", role="DB loader")
-    elif args.command == "geocode-active":
-        _run_script("geocode_active.py", role="Geocoder")
+    from backend.pipeline_run_log import (
+        begin_pipeline_run,
+        finish_pipeline_run,
+        format_argv_for_log,
+    )
+
+    argv_snapshot = format_argv_for_log(args)
+    run_id = begin_pipeline_run(args.command, argv_snapshot)
+    exit_code = 0
+    detail: dict[str, object] = {}
+    try:
+        _dispatch_command(args)
+    except KeyboardInterrupt:
+        exit_code = 130
+        detail["error"] = "KeyboardInterrupt"
+        raise
+    except Exception as exc:
+        exit_code = 1
+        detail["error"] = repr(exc)
+        raise
+    finally:
+        finish_pipeline_run(run_id, exit_code=exit_code, detail=detail if detail else None)
 
 
 if __name__ == "__main__":

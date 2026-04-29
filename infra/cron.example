@@ -15,3 +15,6 @@ MLS_AUTOMATION_DIR=/Users/your-user/Documents/mls-automation
 
 # Weekly sold/rented refresh + memorialization every Sunday at 3:30am.
 30 3 * * 0 cd "$MLS_AUTOMATION_DIR" && /bin/bash scripts/run_scheduled_pipeline.sh weekly-sold-rented --headless
+
+# Postgres backup (VM / Linux; set PGPASSWORD and paths; run as root or docker group).
+# 15 7 * * * PGPASSWORD=your_db_pass BACKUP_ROOT=/opt/backups/mls /opt/mls-automation/scripts/backup_postgres.sh >> /opt/mls-automation/logs/backup.log 2>&1

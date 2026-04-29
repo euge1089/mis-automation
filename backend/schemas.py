@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -92,6 +92,28 @@ class SoldListingHistoryOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class PipelineRunOut(BaseModel):
+    id: int
+    job_key: str
+    argv_json: dict | list | None = None
+    started_at: datetime
+    finished_at: datetime | None = None
+    exit_code: int | None = None
+    hostname: str | None = None
+    git_sha: str | None = None
+    detail_json: dict | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class OpsSummaryRow(BaseModel):
+    job_key: str
+    last_success_at: datetime | None = None
+    last_exit_code: int | None = None
+    run_id: int | None = None
 
 
 class RentedListingHistoryOut(BaseModel):

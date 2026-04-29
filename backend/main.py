@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import func, select, text
+from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session
 
 import pandas as pd
@@ -14,6 +14,7 @@ import pandas as pd
 from backend.db import Base, engine, get_db
 from backend.models import (
     ActiveListing,
+    PipelineRun,
     RentByZipBedroom,
     RentByZipSqft,
     RentedListingHistory,
@@ -24,6 +25,8 @@ from backend.schemas import (
     ActiveListingOut,
     GeocodeBatchIn,
     GeocodeUpdateOut,
+    OpsSummaryRow,
+    PipelineRunOut,
     RentedListingHistoryOut,
     RentByZipBedroomOut,
     RentByZipSqftOut,
@@ -84,6 +87,62 @@ def home() -> FileResponse:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/ops")
+def ops_dashboard() -> FileResponse:
+    """Operations dashboard (pipeline runs)."""
+    path = FRONTEND_DIR / "ops.html"
+    if not path.exists():
+        return FileResponse(FRONTEND_DIR / "index.html")
+    return FileResponse(path)
+
+
+@app.get("/ops/runs", response_model=list[PipelineRunOut])
+def list_pipeline_runs(
+    limit: int = Query(default=50, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> list[PipelineRun]:
+    stmt = select(PipelineRun).order_by(desc(PipelineRun.started_at)).limit(limit)
+    return list(db.execute(stmt).scalars().all())
+
+
+@app.get("/ops/summary", response_model=list[OpsSummaryRow])
+def ops_summary(db: Session = Depends(get_db)) -> list[OpsSummaryRow]:
+    """Latest successful finish time per ``job_key`` (scheduled pipeline commands)."""
+    rows = list(
+        db.execute(
+            select(PipelineRun)
+            .where(PipelineRun.exit_code == 0)
+            .where(PipelineRun.finished_at.isnot(None))
+            .order_by(desc(PipelineRun.finished_at))
+        )
+        .scalars()
+        .all()
+    )
+    seen: set[str] = set()
+    out: list[OpsSummaryRow] = []
+    for r in rows:
+        if r.job_key in seen:
+            continue
+        seen.add(r.job_key)
+        out.append(
+            OpsSummaryRow(
+                job_key=r.job_key,
+                last_success_at=r.finished_at,
+                last_exit_code=r.exit_code,
+                run_id=r.id,
+            )
+        )
+    return out
+
+
+@app.get("/ops/runs/{run_id}", response_model=PipelineRunOut)
+def get_pipeline_run(run_id: int, db: Session = Depends(get_db)) -> PipelineRun:
+    row = db.get(PipelineRun, run_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return row
 
 
 @app.get("/sold-area-stats")

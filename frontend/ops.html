@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MLS Ops — Pipeline runs</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/ops.css?v=1" />
+  </head>
+  <body>
+    <header class="ops-header">
+      <div>
+        <p class="ops-eyebrow">Internal</p>
+        <h1>Pipeline runs</h1>
+        <p class="ops-lede">
+          Scheduled jobs log here after each <code>pipeline.py</code> run (Boston time shown below).
+          <a href="/">← Back to app</a>
+        </p>
+      </div>
+      <button type="button" id="refreshBtn" class="ops-btn">Refresh</button>
+    </header>
+
+    <section class="ops-panel">
+      <h2>Last success by job</h2>
+      <p id="summaryStatus" class="ops-muted"></p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Job</th>
+              <th>Last success (ET)</th>
+              <th>Run ID</th>
+            </tr>
+          </thead>
+          <tbody id="summaryBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="ops-panel">
+      <h2>Recent runs</h2>
+      <p id="runsStatus" class="ops-muted"></p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Job</th>
+              <th>Started (ET)</th>
+              <th>Finished (ET)</th>
+              <th>Exit</th>
+              <th>Host</th>
+              <th>Git</th>
+            </tr>
+          </thead>
+          <tbody id="runsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <script src="/static/ops.js?v=1"></script>
+  </body>
+</html>

@@ -155,7 +155,7 @@ Geography note: MLS coverage is mostly implicit to the logged-in MLS account and
   - `cleaned/*.csv`
   - `analytics/*.csv`
 - Historical snapshots:
-  - Monthly: `history/monthly/YYYY-MM-DD/`
+  - Monthly sold/rented: `history/monthly/data-YYYY-MM/` after each memorialized month; weekly finish also writes `data-YYYY-MM-rolling/` for the hot-window refresh. Ad-hoc monthly runs use `data-YYYY-MM-monthly-run/`.
   - Daily active: `history/daily_active/YYYY-MM-DD/`
 
 ## API Endpoints (v1)
@@ -179,10 +179,16 @@ Geography note: MLS coverage is mostly implicit to the logged-in MLS account and
   - filters: `start_date`, `end_date`, `zip_code`, `limit`
 - `GET /history/rented`
   - filters: `start_date`, `end_date`, `zip_code`, `limit`
+- Ops (pipeline health):
+  - `GET /ops` — HTML dashboard (scheduled runs)
+  - `GET /ops/runs` — recent `pipeline.py` executions (`limit` query param)
+  - `GET /ops/summary` — last successful run per job key
+  - `GET /ops/runs/{id}` — single run detail
 
 ## Frontend Dashboard (v1)
 
 - Served by FastAPI at `/`
+- Internal ops UI at `/ops` (pipeline run history; keep behind SSH tunnel or private network unless you add auth)
 - Includes:
   - active listing search filters
   - listing results table

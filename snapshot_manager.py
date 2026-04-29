@@ -18,11 +18,18 @@ def _copy_if_exists(src: Path, dst: Path) -> bool:
     return True
 
 
-def create_monthly_snapshot(snapshot_date: str | None = None) -> Path:
-    if snapshot_date is None:
-        snapshot_date = datetime.now().strftime("%Y-%m-%d")
+def create_monthly_snapshot(folder_name: str | None = None) -> Path:
+    """
+    Copy monthly pipeline artifacts under ``history/monthly/<folder_name>/``.
 
-    target_dir = HISTORY_DIR / "monthly" / snapshot_date
+    ``folder_name`` defaults to today's calendar date (``YYYY-MM-DD``).
+    For memorialized windows, pass ``data-YYYY-MM`` so folders match the data month.
+    Weekly hot-window snapshots use ``data-YYYY-MM-rolling``.
+    """
+    if folder_name is None:
+        folder_name = datetime.now().strftime("%Y-%m-%d")
+
+    target_dir = HISTORY_DIR / "monthly" / folder_name
     target_dir.mkdir(parents=True, exist_ok=True)
 
     files_to_copy = [
