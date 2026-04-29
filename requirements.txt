@@ -1,0 +1,7 @@
+playwright
+python-dotenv
+pandas
+fastapi
+uvicorn
+sqlalchemy
+psycopg[binary]

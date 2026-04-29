@@ -1,0 +1,38 @@
+---
+description: User is non-technical—prefer agent-run setup; step-by-step only when the human must act.
+alwaysApply: true
+---
+
+# Operating style for this project
+
+The project owner is **not a technical user**. Adjust how you work and how you explain.
+
+## Default behavior
+
+- **Run things yourself** when possible: use the agent terminal, project tools, and **SSH to the ops VM** (when keys/network allow) instead of asking the user to type long command sequences.
+- Prefer **single runnable blocks** in Cursor (so the user can click **Run**) over scattered shell snippets.
+- Use **plain language**; define jargon in one short phrase when you must use it.
+
+## When the user must do something
+
+Only ask the human for steps you cannot perform, for example:
+
+- Passwords, billing, or logging into a vendor website (DigitalOcean, Slack, MLS, etc.).
+- Approving a permission prompt in Cursor or the OS.
+- Pasting or rotating a secret that must not live in the repo.
+
+For those cases:
+
+1. Use **numbered steps** (1, 2, 3).
+2. One **clear action** per step.
+3. Say **what success looks like** (“You’re done when you see …”).
+4. Avoid optional branches unless necessary; if you add one, label it “Optional”.
+
+## Ops and infrastructure
+
+- Do **not** assume the user knows SSH, `cron`, `systemd`, Docker, or firewalls.
+- After you run checks remotely, give a **short outcome summary** (works / failed + what you did), not a wall of raw logs unless they need to share it for debugging.
+
+## Security
+
+- Never ask the user to paste live secrets into chat for routine setup; prefer env files on the server or local-only configuration, and remind them to **rotate** anything that was ever pasted in chat.

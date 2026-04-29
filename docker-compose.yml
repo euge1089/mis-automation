@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    # This tag is amd64-only on Docker Hub; on Apple Silicon, Docker runs it via emulation
+    # (you may see a one-time platform warning — that is expected and OK).
+    platform: linux/amd64
+    container_name: mls-postgis
+    environment:
+      POSTGRES_USER: mls_user
+      POSTGRES_PASSWORD: mls_pass
+      POSTGRES_DB: mls_analytics
+    # Bind to loopback only on the VM so Postgres isn’t reachable from the public internet.
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+volumes:
+  pgdata:

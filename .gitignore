@@ -1,0 +1,23 @@
+.env
+.env.*
+!.env.example
+.venv/
+logs/
+.scheduler-lock/
+history/checkpoints/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+
+# OS
+.DS_Store
+
+# Runtime / generated data (do not commit MLS exports or derived tables)
+downloads/
+cleaned/
+combined/
+history/
+analytics/*.csv

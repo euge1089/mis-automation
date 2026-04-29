@@ -1,0 +1,10 @@
+{
+  "name": "mls-automation",
+  "private": true,
+  "scripts": {
+    "setup": "python3 -m venv .venv && .venv/bin/pip install -U pip && .venv/bin/pip install -r requirements.txt",
+    "dev": ".venv/bin/python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 5173",
+    "start": ".venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 5173",
+    "db": "docker compose up -d db"
+  }
+}

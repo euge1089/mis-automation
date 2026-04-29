@@ -1,0 +1,17 @@
+# Example crontab entries for MLS Automation.
+# Install with: crontab infra/cron.example
+#
+# IMPORTANT:
+# - Update MLS_AUTOMATION_DIR for your machine.
+# - These examples use hosted non-interactive scraping in headless mode.
+
+SHELL=/bin/zsh
+PATH=/usr/local/bin:/usr/bin:/bin
+
+MLS_AUTOMATION_DIR=/Users/your-user/Documents/mls-automation
+
+# Daily active refresh at 2:15am local time.
+15 2 * * * cd "$MLS_AUTOMATION_DIR" && /bin/bash scripts/run_scheduled_pipeline.sh daily-active --with-scrape --headless
+
+# Weekly sold/rented refresh + memorialization every Sunday at 3:30am.
+30 3 * * 0 cd "$MLS_AUTOMATION_DIR" && /bin/bash scripts/run_scheduled_pipeline.sh weekly-sold-rented --headless

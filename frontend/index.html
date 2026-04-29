@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MLS Analytics Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css?v=20260333" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="site-header__content">
+        <div class="site-header__titles">
+          <p class="site-header__eyebrow">For homebuyers</p>
+          <h1 class="site-header__title">Homebuyer Price &amp; Payment Guide</h1>
+          <p class="site-header__lede">
+            See what homes like yours actually sell for, how today’s asking prices compare, and what a monthly payment might look like — in plain English, without the jargon.
+          </p>
+        </div>
+        <div class="site-header__aside">
+          <span class="badge">Demo</span>
+          <span class="site-header__version">v1</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-main">
+    <section class="filters">
+      <h2>Where are you looking?</h2>
+      <p class="note">
+        Start with an area you care about. We’ll show you what similar homes have actually sold for recently, then pull in active listings that match those filters. You can always narrow things down later.
+      </p>
+      <div class="grid">
+        <label>ZIP <input id="zip_code" type="text" placeholder="02116" /></label>
+        <label>Town <input id="town" type="text" placeholder="Boston" /></label>
+        <label>Min Price <input id="min_price" type="number" placeholder="500000" /></label>
+        <label>Max Price <input id="max_price" type="number" placeholder="1500000" /></label>
+        <label>Min Beds <input id="min_beds" type="number" step="0.5" placeholder="2" /></label>
+        <label>Max Beds <input id="max_beds" type="number" step="0.5" placeholder="4" /></label>
+      </div>
+      <div class="actions">
+        <button id="searchBtn">Show homes and insights</button>
+        <button id="clearBtn" class="secondary">Clear</button>
+      </div>
+      <div id="status" class="status"></div>
+      <div
+        id="loadingBarWrap"
+        class="loading-bar-wrap"
+        hidden
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow="0"
+        aria-label="Search progress"
+      >
+        <div class="loading-bar-track">
+          <div id="loadingBarFill" class="loading-bar-fill"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="areaInsights">
+      <h2>Area snapshot (recent sales)</h2>
+      <p class="note" id="area_note">
+        Enter a ZIP (and optionally town and bedrooms) above, then click “Show homes and insights”.
+        We’ll look at roughly the last year of similar sales in that area.
+      </p>
+      <div class="grid area-summary">
+        <div>
+          <h3>Typical sale price</h3>
+          <p id="area_price_main" class="stat-large"></p>
+          <p id="area_price_range" class="note"></p>
+        </div>
+        <div>
+          <h3>Price per square foot</h3>
+          <p id="area_ppsf" class="stat-large"></p>
+          <p class="note">Only shown when enough homes report their size.</p>
+        </div>
+        <div>
+          <h3>Recent activity</h3>
+          <p id="area_volume" class="stat-large"></p>
+          <p id="area_trend_summary" class="note"></p>
+        </div>
+        <div>
+          <h3>Current asking prices</h3>
+          <p id="area_active_summary" class="stat-large"></p>
+          <p id="area_active_note" class="note"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="listingInsights">
+      <h2>Check a specific home</h2>
+      <p class="note">
+        After you run a search, pick one of the homes below to see how its asking price compares to what similar places nearby have actually sold for, plus a rough monthly payment.
+      </p>
+      <div class="grid">
+        <label>
+          Choose a home from your search
+          <select id="listing_select">
+            <option value="">Run a search above, then pick a home…</option>
+          </select>
+        </label>
+        <div class="actions">
+          <button id="analyzeListingBtn">Analyze this home</button>
+        </div>
+      </div>
+      <div class="listing-insights">
+        <h3 id="listing_headline"></h3>
+        <p class="note" id="listing_subheadline"></p>
+        <div class="grid">
+          <div>
+            <h4>Price vs similar recent sales</h4>
+            <p id="listing_price_vs_area" class="stat-large"></p>
+            <p id="listing_price_band" class="note"></p>
+          </div>
+          <div>
+            <h4>Price per square foot</h4>
+            <p id="listing_ppsf" class="stat-large"></p>
+            <p id="listing_ppsf_note" class="note"></p>
+          </div>
+          <div>
+            <h4>Estimated monthly payment</h4>
+            <p id="listing_payment" class="stat-large"></p>
+            <p id="listing_payment_note" class="note"></p>
+          </div>
+        </div>
+        <div class="table-wrap listing-comps-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Address</th>
+                <th>Sold price</th>
+                <th>Beds</th>
+                <th>Baths</th>
+                <th>Sqft</th>
+                <th>Sale date</th>
+              </tr>
+            </thead>
+            <tbody id="listing_comps_body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="filters financing-section">
+      <h2>Financing (monthly carry estimates)</h2>
+      <p class="note">
+        If you plan to pay cash, you can skip this section. For mortgages, property tax uses the annual amount from MLS when available (shown as monthly). Insurance and misc are your own estimates. Mortgage rates below are <strong>illustrative</strong>—change the APR to match a real lender quote. Not financial advice; does not include PMI, HOA, or closing costs.
+      </p>
+      <div class="grid">
+        <label>
+          Down payment %
+          <input id="fin_down_pct" type="number" value="20" min="0" max="100" step="1" />
+        </label>
+        <label>
+          Mortgage product
+          <select id="fin_product">
+            <option value="30fixed">30-year fixed</option>
+            <option value="15fixed">15-year fixed</option>
+            <option value="71arm">7/1 ARM (30-yr amort.)</option>
+            <option value="51arm">5/1 ARM (30-yr amort.)</option>
+            <option value="custom">Custom term</option>
+          </select>
+        </label>
+        <label>
+          Interest rate (APR %)
+          <input id="fin_rate" type="number" value="6.5" min="0" max="25" step="0.125" />
+        </label>
+        <label>
+          Loan term (years)
+          <input id="fin_term_years" type="number" value="30" min="1" max="40" step="1" />
+        </label>
+        <label>
+          Monthly insurance ($)
+          <input id="fin_insurance" type="number" value="0" min="0" step="50" placeholder="150" />
+        </label>
+        <label>
+          Monthly misc ($)
+          <input id="fin_misc" type="number" value="0" min="0" step="25" placeholder="HOA or maintenance" />
+        </label>
+      </div>
+      <p class="note fin-rate-hint" id="fin_preset_hint"></p>
+    </section>
+
+    <section class="layout">
+      <div class="panel">
+        <h2>Map View</h2>
+        <div id="map"></div>
+        <p class="note">
+          Pins use coordinates from your data when present; otherwise addresses are geocoded in small
+          batches (may take a moment). Results stay saved for next time.
+        </p>
+      </div>
+      <div class="panel">
+        <h2>Rent Comps</h2>
+        <p class="note comp-hint">Filtered by the ZIP and min/max beds above (updates when you search).</p>
+        <div class="table-wrap comp-table-scroll">
+          <table id="compTable">
+            <thead>
+              <tr>
+                <th>ZIP</th>
+                <th>Beds</th>
+                <th>Median Rent</th>
+                <th>Avg Rent</th>
+                <th>Sample</th>
+                <th>Confidence</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Active Listing Results</h2>
+      <div class="table-wrap">
+        <table id="resultsTable">
+          <thead>
+            <tr>
+              <th>MLS ID</th>
+              <th>Address</th>
+              <th>Town</th>
+              <th>ZIP</th>
+              <th>On map</th>
+              <th>Beds</th>
+              <th>Baths</th>
+              <th>Sqft</th>
+              <th>List Price</th>
+              <th>Tax/mo</th>
+              <th>P&amp;I</th>
+              <th>Est. carry/mo</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+    </main>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="/static/app.js?v=20260336"></script>
+  </body>
+</html>
