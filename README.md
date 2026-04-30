@@ -261,6 +261,7 @@ Hosted recommendation:
 
 - Use a small cloud VM with cron/systemd timers, not a laptop.
 - Setup guide: [docs/hosted_scheduler_vm.md](docs/hosted_scheduler_vm.md)
+- Scraping vs cron vs `/ops` metrics (read this on every prod setup): [docs/mls_scraping_and_ops_alignment.md](docs/mls_scraping_and_ops_alignment.md)
 
 Memorialization policy:
 

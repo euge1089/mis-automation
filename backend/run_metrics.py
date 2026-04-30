@@ -30,6 +30,21 @@ def _count_glob(pattern_dir: Path, pattern: str) -> int | None:
     return len(list(pattern_dir.glob(pattern)))
 
 
+def _sum_csv_data_rows_glob(pattern_dir: Path, pattern: str) -> int | None:
+    """Sum data rows across all matching CSVs (volume signal before combine/dedupe)."""
+    if not pattern_dir.is_dir():
+        return None
+    paths = sorted(pattern_dir.glob(pattern))
+    if not paths:
+        return 0
+    total = 0
+    for path in paths:
+        n = _count_csv_data_rows(path)
+        if n is not None:
+            total += n
+    return total
+
+
 def _add_database_counts(m: dict[str, object]) -> None:
     """Attach DB row counts when Postgres is reachable."""
     try:
@@ -52,11 +67,14 @@ def gather_run_metrics(job_key: str) -> dict[str, object]:
     m: dict[str, object] = {}
 
     if job_key == "daily-active":
-        m["active_listings_combined_rows"] = _count_csv_data_rows(COMBINED_DIR / "active_latest.csv")
-        m["active_listings_after_cleaning"] = _count_csv_data_rows(CLEANED_DIR / "active_clean_latest.csv")
         n_files = _count_glob(DOWNLOADS_ACTIVE_DIR, "active_export_*.csv")
         if n_files is not None:
             m["raw_mls_export_files"] = n_files
+        raw_rows = _sum_csv_data_rows_glob(DOWNLOADS_ACTIVE_DIR, "active_export_*.csv")
+        if raw_rows is not None:
+            m["active_export_rows_raw_sum"] = raw_rows
+        m["active_listings_combined_rows"] = _count_csv_data_rows(COMBINED_DIR / "active_latest.csv")
+        m["active_listings_after_cleaning"] = _count_csv_data_rows(CLEANED_DIR / "active_clean_latest.csv")
 
     elif job_key in ("weekly-sold-rented", "monthly", "validate-monthly"):
         ns = _count_glob(DOWNLOADS_DIR, "mls_export_*.csv")
@@ -65,6 +83,12 @@ def gather_run_metrics(job_key: str) -> dict[str, object]:
             m["sold_export_files"] = ns
         if nr is not None:
             m["rentals_export_files"] = nr
+        sold_raw = _sum_csv_data_rows_glob(DOWNLOADS_DIR, "mls_export_*.csv")
+        if sold_raw is not None:
+            m["sold_export_rows_raw_sum"] = sold_raw
+        rent_raw = _sum_csv_data_rows_glob(RENTALS_DOWNLOADS_DIR, "rentals_export_*.csv")
+        if rent_raw is not None:
+            m["rentals_export_rows_raw_sum"] = rent_raw
         m["sold_rows_cleaned"] = _count_csv_data_rows(CLEANED_DIR / "sold_clean_latest.csv")
         m["rentals_rows_cleaned"] = _count_csv_data_rows(CLEANED_DIR / "rentals_clean_latest.csv")
         m["sold_rows_combined"] = _count_csv_data_rows(COMBINED_DIR / "sold_master_latest.csv")

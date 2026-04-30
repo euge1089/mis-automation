@@ -2,6 +2,8 @@
 
 This project already loads settings from a file named **`.env`** in the project folder. You do **not** need to understand “machines” to use your **Mac** day to day: open Cursor, run the app, use the browser. The steps below are only for **accounts you log into in a browser** (GitHub, DigitalOcean, etc.) or **one cloud computer** (the small Linux server that runs scheduled jobs).
 
+**Canonical guide (scraping, cron flags, what `/ops` shows):** [mls_scraping_and_ops_alignment.md](mls_scraping_and_ops_alignment.md)
+
 Words you might see:
 
 - **VM (“droplet”)**: a rented Linux computer in the cloud that runs your scheduled MLS jobs 24/7.

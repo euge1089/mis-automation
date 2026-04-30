@@ -55,18 +55,34 @@ def metric_lines(job_key: str, detail: dict | None, argv_json: dict | list | Non
             lines.append(f"{label}: {int(v):,}")
 
     if job_key == "daily-active":
-        fmt_int("raw_mls_export_files", "MLS export CSV files in downloads/active (input slices)")
-        fmt_int("active_listings_combined_rows", "Rows in combined/active_latest.csv (merged from all slices)")
+        # Scrape/download signals first (highest operational risk); downstream counts after.
+        fmt_int(
+            "raw_mls_export_files",
+            "MLS scrape: number of active_export_*.csv slice files in downloads/active",
+        )
+        fmt_int(
+            "active_export_rows_raw_sum",
+            "MLS scrape: ≈ raw listing rows across those slices before combine (bands can overlap)",
+        )
+        fmt_int("active_listings_combined_rows", "After combine: rows in combined/active_latest.csv (deduped)")
         fmt_int(
             "active_listings_after_cleaning",
-            "Listings after cleaning (active_clean_latest.csv — used for validation & loads)",
+            "After cleaning: rows in active_clean_latest.csv (validation & loads)",
         )
-        fmt_int("active_listings_in_database", "Active listing rows in Postgres after load-db step")
+        fmt_int("active_listings_in_database", "Active listing rows in Postgres after load-db")
         fmt_int("sold_analytics_snapshot_rows", "Sold analytics snapshot rows in Postgres (if load-db ran)")
 
     elif job_key in ("weekly-sold-rented", "monthly", "validate-monthly"):
-        fmt_int("sold_export_files", "Sold MLS export CSV files in downloads/ (mls_export_*.csv)")
-        fmt_int("rentals_export_files", "Rental export CSV files in downloads/rentals/")
+        fmt_int("sold_export_files", "MLS scrape: sold export CSV files (downloads/mls_export_*.csv)")
+        fmt_int("rentals_export_files", "MLS scrape: rental export CSV files (downloads/rentals/)")
+        fmt_int(
+            "sold_export_rows_raw_sum",
+            "MLS scrape: ≈ raw sold rows across downloaded exports (before downstream combine)",
+        )
+        fmt_int(
+            "rentals_export_rows_raw_sum",
+            "MLS scrape: ≈ raw rental rows across downloaded exports",
+        )
         fmt_int("sold_rows_combined", "Sold rows (combined)")
         fmt_int("rentals_rows_combined", "Rental rows (combined)")
         fmt_int("sold_rows_cleaned", "Sold rows (cleaned)")
