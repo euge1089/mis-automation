@@ -1,6 +1,10 @@
 # Example crontab entries for MLS Automation.
 # Install with: crontab infra/cron.example
 #
+# CRITICAL — daily-active:
+#   You MUST pass --with-scrape or the job only merges whatever CSVs are already on disk (no MLS login).
+#   Many production outages are a missing --with-scrape on the server crontab (Git does not store cron).
+#
 # IMPORTANT:
 # - Update MLS_AUTOMATION_DIR for your machine.
 # - These examples use hosted non-interactive scraping in headless mode.

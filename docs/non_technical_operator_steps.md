@@ -44,7 +44,7 @@ Or from an SSH session already logged in:
 - **Pipeline jobs:** Lines containing `pipeline.py daily-active` and `pipeline.py weekly-sold-rented` (or `scripts/run_scheduled_pipeline.sh …`), pointing at your real project path (often `/opt/mls-automation`).
 - **Backup job:** A line running `backup_postgres.sh` or similar, usually under `root`.
 
-The repo’s template is `infra/cron.example` (it uses `run_scheduled_pipeline.sh` and `--with-scrape`). Your server may use slightly different flags; that is OK if exports still appear on disk when you expect them. If you want the server to match the template exactly, say so and we can align it in a focused change.
+The repo’s template is `infra/cron.example`. **For production, `daily-active` must include `--with-scrape`** (often with `--headless`), or the job **never logs into MLS** and only re-processes **old CSV files** already on disk—a mistake that is invisible in Git because **cron lives only on the server.** Compare your live `crontab -l` to the template line by line at least once after any server setup or migration.
 
 ### If you prefer the browser
 

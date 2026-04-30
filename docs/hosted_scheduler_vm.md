@@ -86,3 +86,5 @@ These details match the **DigitalOcean** droplet used for schedules, API, and de
 After rsync, merge into `/opt` and restart the API: `infra/vm_merge_deploy.sh` (run **on the VM**).
 
 **Browser access:** the API usually listens on `127.0.0.1:8000` on the VM—use an **SSH tunnel** from your computer (`ssh -L 8000:127.0.0.1:8000 mlsops@142.93.202.226`) then open `http://127.0.0.1:8000/ops` unless you expose the port another way.
+
+**Cron checklist (production):** `crontab` is **not** in this repo. Confirm `pipeline.py daily-active` includes **`--with-scrape`** (and usually `--headless`); omitting `--with-scrape` means **no MLS scrape**—only existing CSVs. Weekly defaults to scraping unless **`--no-scrape`** is set. After edits run `crontab -l` to verify.

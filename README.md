@@ -255,6 +255,8 @@ Default scheduled jobs in the template:
 
 Note: `daily-active` now includes DB loading by default, so a separate scheduled `load-db` for active freshness is not required.
 
+**Production VM:** Server `crontab` is **outside Git**. After any manual cron edit, confirm `daily-active` includes **`--with-scrape`** (with **`--headless`** on servers). Without `--with-scrape`, the job only merges **existing** CSVs—no MLS login—and `pipeline.py` prints a **WARNING** to stderr at startup. Weekly jobs scrape by default unless you add **`--no-scrape`**.
+
 Hosted recommendation:
 
 - Use a small cloud VM with cron/systemd timers, not a laptop.

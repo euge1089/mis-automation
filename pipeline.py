@@ -356,6 +356,23 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # Loud hints when scheduled jobs omit scraping—easy to misconfigure prod cron (Git never sees crontab).
+    if args.command == "daily-active" and not args.with_scrape:
+        print(
+            "WARNING: daily-active is running WITHOUT --with-scrape. "
+            "Only CSV files already on disk will be combined — no MLS browser login or fresh downloads. "
+            "Production schedules should normally use: pipeline.py daily-active --with-scrape --headless",
+            file=sys.stderr,
+            flush=True,
+        )
+    if args.command == "weekly-sold-rented" and args.no_scrape:
+        print(
+            "WARNING: weekly-sold-rented is running WITH --no-scrape. "
+            "MLS sold/rent downloads are skipped; existing exports on disk are processed only.",
+            file=sys.stderr,
+            flush=True,
+        )
+
     from backend.pipeline_run_log import (
         begin_pipeline_run,
         finish_pipeline_run,
