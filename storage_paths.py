@@ -1,16 +1,36 @@
 """Raw MLS export paths and cleanup between scrape windows.
 
 Sold exports live at ``downloads/mls_export_*.csv``; rentals at
-``downloads/rentals/rentals_export_*.csv``. Active exports under
-``downloads/active/`` are never touched here.
+``downloads/rentals/rentals_export_*.csv``. Active exports live under
+``downloads/active/active_export_*.csv``.
 
-Clearing before each scraped window keeps ``combine_*`` from merging slices
-from older memorialized windows (Postgres already holds closed months).
+``clear_sold_and_rental_raw_downloads`` runs before sold/rent scrapes so combines
+do not mix windows. ``clear_active_raw_downloads`` runs before the **daily active**
+scrape so each run pulls fresh MLS slices instead of resuming stale files from
+prior days (Postgres active listings are still fully replaced on each ``load-db``
+via ``delete(ActiveListing)`` + insert).
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+
+
+def clear_active_raw_downloads(project_dir: Path) -> int:
+    """
+    Delete ``downloads/active/active_export_*.csv`` slice files.
+
+    Used before ``daily-active`` scraping so prior-day exports are not reused.
+    Returns the number of files removed.
+    """
+    active_dir = project_dir / "downloads" / "active"
+    if not active_dir.is_dir():
+        return 0
+    n = 0
+    for path in sorted(active_dir.glob("active_export_*.csv")):
+        path.unlink()
+        n += 1
+    return n
 
 
 def clear_sold_and_rental_raw_downloads(project_dir: Path) -> dict[str, int]:

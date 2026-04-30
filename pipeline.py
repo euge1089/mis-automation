@@ -13,7 +13,7 @@ from clean_data import run_cleaning_jobs
 from build_rent_model import build_rent_models
 from data_quality import validate_monthly_outputs, validate_daily_active_outputs
 from snapshot_manager import create_monthly_snapshot, create_daily_active_snapshot
-from storage_paths import clear_sold_and_rental_raw_downloads
+from storage_paths import clear_active_raw_downloads, clear_sold_and_rental_raw_downloads
 from historical_policy import (
     DateWindow,
     backfill_window,
@@ -130,6 +130,11 @@ def run_daily_active_pipeline(
 ) -> None:
     print("=== DAILY ACTIVE PIPELINE START ===")
     if run_scraper:
+        removed = clear_active_raw_downloads(PROJECT_DIR)
+        print(
+            "Cleared prior active MLS slice files before scrape: "
+            f"{removed} file(s) removed from downloads/active/"
+        )
         active_args: list[str] = []
         if headless:
             active_args.append("--headless")

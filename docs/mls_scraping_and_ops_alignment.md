@@ -59,32 +59,23 @@ For each pipeline run, stored **`detail_json`** (from `backend/run_metrics.py`) 
 2. Check **raw slice counts / raw row sums** on the latest runs for jumps to zero or absurd drops vs prior runs.
 3. If something looks wrong, open **“Log lines for this run”** or the rolling log — scrape failures usually show there before combine.
 
+## Database: current active listings are fully replaced (no stale rows)
+
+Each load **deletes every row** in **`active_listings`** and re-inserts from **`cleaned/active_clean_latest.csv`**. Homes that are no longer active **disappear from Postgres**—they are not kept as stale noise.
+
+## Raw active CSV slices: cleared before each daily scrape
+
+For **`daily-active` with `--with-scrape`**, **`pipeline.py`** removes **`downloads/active/active_export_*.csv`** **before** the scraper runs (`storage_paths.clear_active_raw_downloads`). Each run starts **without** prior-day slice files, then pulls **fresh** MLS exports for that run (subject to MLS caps). Combine-only runs (**no** `--with-scrape`) do **not** clear that folder.
+
 ## When the active scraper says “nothing to do”
 
-If **`scrape_mls_active.py`** prints that **all price bands already have** `active_export_*.csv` files, it **exits before opening the browser**—so you will **not** see “Logging in…” in the log. The pipeline then still runs **combine** on those existing files.
-
-### Stale files from a prior day (important)
-
-Resume logic does **not** look at file **dates** or “last night’s run.” It only checks: **do slice files exist** that cover the full price range up to the configured max? If **yes**, the scraper assumes the run is “complete” and **skips MLS**—even when those files are **from yesterday or last week**. The combine step then rebuilds from **whatever is on disk**, which may not be **today’s** MLS data.
-
-So your concern is valid: **a normal `daily-active` with `--with-scrape` but without `--from-start` can re-process old slices** without a fresh login when all bands still have files.
-
-**Ways to get true daily fresh exports (choose an ops policy):**
-
-- **Periodic full refresh:** run with **`--from-start`** on a schedule you can afford (e.g. weekly off-peak), or when you know you need a full re-pull.  
-- **Intentional reset:** only if you understand disk/MLS limits—remove or archive `downloads/active/active_export_*.csv` under a runbook, then run scrape (or use `--from-start`).  
-- **Future code option:** treat slices older than *N* hours as missing (not implemented today).
-
-To **force a full re-download** from MLS (ignoring existing slice files for resume), run:
-
-`pipeline.py daily-active --with-scrape --headless --from-start`
-
-(Heavy: many downloads; watch MLS daily export limits.) For **partial** catch-up (only missing bands), omit `--from-start` after a failed or partial run.
+Rare after the pre-scrape clear: it means the scraper believes **no bands** need downloads (misconfiguration or edge case). **`--from-start`** still forces the scraper’s ignore-resume mode if you need it for troubleshooting.
 
 ## Related files
 
 - `infra/cron.example` — canonical scheduled commands  
 - `scripts/run_scheduled_pipeline.sh` — wrapper used by some installs  
+- `storage_paths.py` — `clear_active_raw_downloads`, sold/rent clears  
 - `backend/run_metrics.py` — collects post-run file/row counts  
 - `backend/ops_enrichment.py` — plain-language lines on `/ops`  
 - `docs/non_technical_operator_steps.md` — how to inspect `crontab` on the VM  
