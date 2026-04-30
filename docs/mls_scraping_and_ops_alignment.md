@@ -59,6 +59,16 @@ For each pipeline run, stored **`detail_json`** (from `backend/run_metrics.py`) 
 2. Check **raw slice counts / raw row sums** on the latest runs for jumps to zero or absurd drops vs prior runs.
 3. If something looks wrong, open **“Log lines for this run”** or the rolling log — scrape failures usually show there before combine.
 
+## When the active scraper says “nothing to do”
+
+If **`scrape_mls_active.py`** prints that **all price bands already have** `active_export_*.csv` files, it **exits before opening the browser**—so you will **not** see “Logging in…” in the log. The pipeline then still runs **combine** on those existing files.
+
+To **force a full re-download** from MLS (ignoring existing slice files for resume), run:
+
+`pipeline.py daily-active --with-scrape --headless --from-start`
+
+(Heavy: many downloads; watch MLS daily export limits.) For normal **incremental** days, omit `--from-start` so the scraper only fills **missing** bands.
+
 ## Related files
 
 - `infra/cron.example` — canonical scheduled commands  

@@ -125,10 +125,16 @@ def run_monthly_pipeline(run_scrapers: bool) -> None:
     print("=== MONTHLY PIPELINE COMPLETE ===")
 
 
-def run_daily_active_pipeline(run_scraper: bool, *, headless: bool = False) -> None:
+def run_daily_active_pipeline(
+    run_scraper: bool, *, headless: bool = False, from_start: bool = False
+) -> None:
     print("=== DAILY ACTIVE PIPELINE START ===")
     if run_scraper:
-        active_args = ["--headless"] if headless else []
+        active_args: list[str] = []
+        if headless:
+            active_args.append("--headless")
+        if from_start:
+            active_args.append("--from-start")
         _run_script("scrape_mls_active.py", active_args, role="Scraper")
 
     try:
@@ -150,8 +156,9 @@ def run_daily_active_pipeline_with_geocode(
     run_load_db: bool,
     *,
     headless: bool = False,
+    from_start: bool = False,
 ) -> None:
-    run_daily_active_pipeline(run_scraper=run_scraper, headless=headless)
+    run_daily_active_pipeline(run_scraper=run_scraper, headless=headless, from_start=from_start)
     if run_geocode:
         _run_script("geocode_active.py", role="Geocoder")
     if run_load_db:
@@ -263,6 +270,7 @@ def _dispatch_command(args: Namespace) -> None:
             run_geocode=args.with_geocode,
             run_load_db=not args.no_load_db,
             headless=args.headless,
+            from_start=args.from_start,
         )
     elif args.command == "validate-monthly":
         validate_monthly_outputs()
@@ -347,6 +355,14 @@ def main() -> None:
         "--headless",
         action="store_true",
         help="Pass --headless to active scraping script.",
+    )
+    daily.add_argument(
+        "--from-start",
+        action="store_true",
+        help=(
+            "With --with-scrape: ignore existing active_export_*.csv bands and re-download from $0 "
+            "(full MLS refresh; slower). Omit for normal resume behavior."
+        ),
     )
 
     subparsers.add_parser("validate-monthly", help="Validate monthly outputs only")
