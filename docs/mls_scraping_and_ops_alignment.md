@@ -63,11 +63,23 @@ For each pipeline run, stored **`detail_json`** (from `backend/run_metrics.py`) 
 
 If **`scrape_mls_active.py`** prints that **all price bands already have** `active_export_*.csv` files, it **exits before opening the browser**—so you will **not** see “Logging in…” in the log. The pipeline then still runs **combine** on those existing files.
 
+### Stale files from a prior day (important)
+
+Resume logic does **not** look at file **dates** or “last night’s run.” It only checks: **do slice files exist** that cover the full price range up to the configured max? If **yes**, the scraper assumes the run is “complete” and **skips MLS**—even when those files are **from yesterday or last week**. The combine step then rebuilds from **whatever is on disk**, which may not be **today’s** MLS data.
+
+So your concern is valid: **a normal `daily-active` with `--with-scrape` but without `--from-start` can re-process old slices** without a fresh login when all bands still have files.
+
+**Ways to get true daily fresh exports (choose an ops policy):**
+
+- **Periodic full refresh:** run with **`--from-start`** on a schedule you can afford (e.g. weekly off-peak), or when you know you need a full re-pull.  
+- **Intentional reset:** only if you understand disk/MLS limits—remove or archive `downloads/active/active_export_*.csv` under a runbook, then run scrape (or use `--from-start`).  
+- **Future code option:** treat slices older than *N* hours as missing (not implemented today).
+
 To **force a full re-download** from MLS (ignoring existing slice files for resume), run:
 
 `pipeline.py daily-active --with-scrape --headless --from-start`
 
-(Heavy: many downloads; watch MLS daily export limits.) For normal **incremental** days, omit `--from-start` so the scraper only fills **missing** bands.
+(Heavy: many downloads; watch MLS daily export limits.) For **partial** catch-up (only missing bands), omit `--from-start` after a failed or partial run.
 
 ## Related files
 
