@@ -11,6 +11,9 @@
 [Unit]
 Description=MLS Automation FastAPI
 After=network.target
+# These MUST live under [Unit] (not [Service]); otherwise systemd keeps defaults (often 5 starts / 10s).
+StartLimitIntervalSec=120
+StartLimitBurst=30
 
 [Service]
 Type=simple
@@ -23,10 +26,6 @@ Restart=always
 RestartSec=10
 StandardOutput=append:/opt/mls-automation/logs/api.out.log
 StandardError=append:/opt/mls-automation/logs/api.err.log
-
-# Avoid false “failed forever” after a burst of bad starts during upgrades (defaults are tight).
-StartLimitIntervalSec=120
-StartLimitBurst=30
 
 [Install]
 WantedBy=multi-user.target
