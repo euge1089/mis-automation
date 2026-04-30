@@ -1,4 +1,5 @@
 import argparse
+import re
 from pathlib import Path
 import os
 import time
@@ -90,6 +91,41 @@ def close_download_modal_if_open(page):
         pass
 
 
+def _open_search_page_after_login(page) -> None:
+    """
+    Land on the MLS search UI after sign-in. Dismiss modals first — post-download dialogs block the Search tab.
+    Try several locator strategies; Pinergy accessible names occasionally drift slightly.
+    """
+    close_download_modal_if_open(page)
+    page.wait_for_load_state("domcontentloaded")
+    time.sleep(1.5)
+
+    last_exc: Exception | None = None
+    attempts = (
+        lambda: page.get_by_role("link", name="Search").click(timeout=90_000),
+        lambda: page.get_by_role("link", name=re.compile(r"^\s*Search\s*$", re.I)).click(timeout=30_000),
+        lambda: page.get_by_role("link", name=re.compile(r"Search", re.I)).first.click(timeout=30_000),
+        lambda: page.locator("a").filter(has_text=re.compile(r"^\s*Search\s*$", re.I)).first.click(timeout=30_000),
+    )
+
+    for i, fn in enumerate(attempts):
+        close_download_modal_if_open(page)
+        try:
+            fn()
+            page.wait_for_load_state("load")
+            wait_for_page_blocker_to_clear(page)
+            return
+        except Exception as exc:
+            last_exc = exc
+            print(f"  Search navigation attempt {i + 1}/{len(attempts)} failed: {exc!r}")
+            page.keyboard.press("Escape")
+            time.sleep(1.5)
+
+    raise TimeoutError(
+        "Could not click Search after login (modal blocking or MLS UI changed)."
+    ) from last_exc
+
+
 def login(page, username: str, password: str):
     print("Opening MLS login page...")
     page.goto(LOGIN_URL, wait_until="load")
@@ -102,9 +138,7 @@ def login(page, username: str, password: str):
     click_if_visible(page, "Click Here to Continue to", timeout=5000)
 
     print("Opening search page...")
-    page.get_by_role("link", name="Search").click()
-    page.wait_for_load_state("load")
-    wait_for_page_blocker_to_clear(page)
+    _open_search_page_after_login(page)
 
 
 def set_static_filters(page):

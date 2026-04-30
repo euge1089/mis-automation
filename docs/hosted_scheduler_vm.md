@@ -70,6 +70,20 @@ Schedule root cron (example 07:15 UTC daily):
 
 Copy dumps off-droplet periodically (S3, another region, or encrypted storage).
 
+## Tomorrow-ready deploy (`/opt/mls-automation`)
+
+What cron actually runs is **`scripts/run_scheduled_pipeline.sh`** from **`MLS_AUTOMATION_DIR`** (usually **`/opt/mls-automation`**). Each **`daily-active --with-scrape`** run **deletes** prior **`downloads/active/active_export_*.csv`** slices, then scrapes fresh MLS exports (then combine → clean → validate → DB load).
+
+1. **Ship code to the VM’s deploy folder** (from your laptop, repo root):  
+   `rsync -az --exclude '.venv' --exclude '.git' --exclude '.env' --exclude 'downloads' --exclude 'history' --exclude 'logs' ./ mlsops@YOUR_DROPLET:~/mls-automation-deploy/`
+2. **Merge into `/opt` and restart the API** (run **on the VM**, needs sudo once):  
+   `sudo bash ~/mls-automation-deploy/infra/vm_merge_deploy.sh`  
+   This runs **`pip install`**, **`playwright install chromium`**, and **`systemctl restart mls-api.service`**.
+3. **Match production cron** to **`infra/crontab.production.opt.txt`** (`crontab -e` as **`mlsops`**): daily **`daily-active --with-scrape --headless`** at **`02:15`**, weekly **`weekly-sold-rented --headless`** as you prefer.
+4. **Smoke test** (optional):  
+   `cd /opt/mls-automation && bash scripts/run_scheduled_pipeline.sh daily-active --with-scrape --headless`  
+   Log: **`logs/scheduler/daily-active_*.log`**.
+
 ## Production ops VM (reference)
 
 These details match the **DigitalOcean** droplet used for schedules, API, and deploys. **Confirm in the dashboard** before relying on them—recreating or migrating a droplet **changes the public IP**.

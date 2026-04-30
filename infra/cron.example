@@ -7,12 +7,17 @@
 #
 # IMPORTANT:
 # - Update MLS_AUTOMATION_DIR for your machine.
+# - Production VM path is usually /opt/mls-automation — see infra/crontab.production.opt.txt
 # - These examples use hosted non-interactive scraping in headless mode.
 
 SHELL=/bin/zsh
 PATH=/usr/local/bin:/usr/bin:/bin
 
 MLS_AUTOMATION_DIR=/Users/your-user/Documents/mls-automation
+
+# --- Production (DigitalOcean / Ubuntu): copy from infra/crontab.production.opt.txt instead ---
+# MLS_AUTOMATION_DIR=/opt/mls-automation
+# 15 2 * * * cd "$MLS_AUTOMATION_DIR" && /bin/bash scripts/run_scheduled_pipeline.sh daily-active --with-scrape --headless
 
 # Daily active refresh at 2:15am local time.
 # This command now includes DB loading by default.

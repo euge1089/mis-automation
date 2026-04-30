@@ -54,6 +54,9 @@ if [[ -f "${ENV_FILE}" ]]; then
   set +a
 fi
 
+# Cron-friendly log flushing (otherwise Python may buffer until process exit).
+export PYTHONUNBUFFERED=1
+
 if [[ -x "${PROJECT_DIR}/.venv/bin/python" ]]; then
   PYTHON_BIN="${PROJECT_DIR}/.venv/bin/python"
 else

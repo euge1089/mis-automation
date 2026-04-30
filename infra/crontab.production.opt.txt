@@ -1,0 +1,30 @@
+# Production VM (typical): app lives at /opt/mls-automation, jobs run as user `mlsops`.
+# Install with: crontab -e   (paste these lines; adjust clock times / TZ if needed.)
+#
+# Requires: code deployed to /opt (see infra/vm_merge_deploy.sh), valid `.env` with MLS_*,
+# Playwright browsers installed (merge script runs `playwright install chromium`).
+#
+# Why `run_scheduled_pipeline.sh` instead of calling `python pipeline.py` directly?
+# - Loads `.env` into the shell as well as app code
+# - Single-instance lock (`.scheduler-lock`) avoids overlapping runs
+# - Full logs under `logs/scheduler/<job>_YYYY-MM-DD_HH-MM-SS.log`
+# Script prints "Run complete. Log: …" to stdout (capture with cron redirect below if you want).
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Match your server timezone (example: US Eastern).
+TZ=America/New_York
+
+# Cron-friendly Python output (flush each line to logs).
+PYTHONUNBUFFERED=1
+
+MLS_AUTOMATION_DIR=/opt/mls-automation
+
+# Daily active: deletes prior `downloads/active/active_export_*.csv`, scrapes MLS, combine/clean/validate, load Postgres.
+# Example times — edit minutes/hours to taste:
+#   15 2 * * *  → 02:15 local (TZ above)
+10 6 * * * cd "$MLS_AUTOMATION_DIR" && /bin/bash scripts/run_scheduled_pipeline.sh daily-active --with-scrape --headless >> /opt/mls-automation/logs/cron-daily-active.stdout.log 2>&1
+
+# Weekly sold/rented (Sunday example):
+40 6 * * 0 cd "$MLS_AUTOMATION_DIR" && /bin/bash scripts/run_scheduled_pipeline.sh weekly-sold-rented --headless >> /opt/mls-automation/logs/cron-weekly-sold-rented.stdout.log 2>&1
