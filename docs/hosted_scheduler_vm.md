@@ -75,7 +75,8 @@ Copy dumps off-droplet periodically (S3, another region, or encrypted storage).
 What cron actually runs is **`scripts/run_scheduled_pipeline.sh`** from **`MLS_AUTOMATION_DIR`** (usually **`/opt/mls-automation`**). Each **`daily-active --with-scrape`** run **deletes** prior **`downloads/active/active_export_*.csv`** slices, then scrapes fresh MLS exports (then combine → clean → validate → DB load).
 
 1. **Ship code to the VM’s deploy folder** (from your laptop, repo root):  
-   `rsync -az --exclude '.venv' --exclude '.git' --exclude '.env' --exclude 'downloads' --exclude 'history' --exclude 'logs' ./ mlsops@YOUR_DROPLET:~/mls-automation-deploy/`
+   `rsync -az --exclude '.venv' --exclude '.git' --exclude '.env' --exclude 'downloads' --exclude 'history' --exclude 'logs' ./ mlsops@YOUR_DROPLET:~/mls-automation-deploy/`  
+   Never symlink **`~/mls-automation-deploy/.env`** to **`/opt/mls-automation/.env`** with the same path — that can create a **self-referential symlink** and break **`systemd`** `EnvironmentFile=` until fixed.
 2. **Merge into `/opt` and restart the API** (run **on the VM**, needs sudo once):  
    `sudo bash ~/mls-automation-deploy/infra/vm_merge_deploy.sh`  
    This runs **`pip install`**, **`playwright install chromium`**, and **`systemctl restart mls-api.service`**.
