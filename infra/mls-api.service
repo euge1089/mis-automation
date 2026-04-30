@@ -1,0 +1,32 @@
+# Example systemd unit for the FastAPI app on the production VM.
+# Install (once): sudo cp infra/mls-api.service /etc/systemd/system/mls-api.service
+#                sudo systemctl daemon-reload && sudo systemctl enable --now mls-api.service
+#
+# Notes:
+# - Default systemd rate limits are aggressive (often 5 starts / 10s). After several failed
+#   restarts (bad deploy, DB blip), the service can appear "stuck" until you run:
+#     sudo systemctl reset-failed mls-api.service
+# - We relax limits slightly so deploy restarts + pip/playwright don’t trip the burst window.
+
+[Unit]
+Description=MLS Automation FastAPI
+After=network.target
+
+[Service]
+Type=simple
+User=mlsops
+Group=mlsops
+WorkingDirectory=/opt/mls-automation
+EnvironmentFile=/opt/mls-automation/.env
+ExecStart=/opt/mls-automation/.venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=10
+StandardOutput=append:/opt/mls-automation/logs/api.out.log
+StandardError=append:/opt/mls-automation/logs/api.err.log
+
+# Avoid false “failed forever” after a burst of bad starts during upgrades (defaults are tight).
+StartLimitIntervalSec=120
+StartLimitBurst=30
+
+[Install]
+WantedBy=multi-user.target

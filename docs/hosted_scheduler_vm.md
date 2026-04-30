@@ -79,6 +79,20 @@ What cron actually runs is **`scripts/run_scheduled_pipeline.sh`** from **`MLS_A
 2. **Merge into `/opt` and restart the API** (run **on the VM**, needs sudo once):  
    `sudo bash ~/mls-automation-deploy/infra/vm_merge_deploy.sh`  
    This runs **`pip install`**, **`playwright install chromium`**, and **`systemctl restart mls-api.service`**.
+
+If **`systemctl`** says **`Result=resources`** or the unit never reaches **active**, systemd may have **hit its start burst limit** (default is only a few fast restarts per 10 seconds — common right after a bad deploy). On the VM:
+
+```bash
+sudo systemctl stop mls-api.service
+sudo systemctl reset-failed mls-api.service
+sudo cp /opt/mls-automation/infra/mls-api.service /etc/systemd/system/mls-api.service   # first time: install relaxed limits from repo
+sudo systemctl daemon-reload
+sudo systemctl start mls-api.service
+sudo systemctl status mls-api.service --no-pager
+curl -s http://127.0.0.1:8000/health
+```
+
+(`infra/mls-api.service` in the repo widens **`StartLimitBurst`** / **`StartLimitIntervalSec`** so upgrades are less fragile.)
 3. **Match production cron** to **`infra/crontab.production.opt.txt`** (`crontab -e` as **`mlsops`**): daily **`daily-active --with-scrape --headless`** at **`02:15`**, weekly **`weekly-sold-rented --headless`** as you prefer.
 4. **Smoke test** (optional):  
    `cd /opt/mls-automation && bash scripts/run_scheduled_pipeline.sh daily-active --with-scrape --headless`  
