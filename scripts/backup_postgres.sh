@@ -24,4 +24,7 @@ docker exec -e PGPASSWORD="${PGPASSWORD:-mls_pass}" "$CONTAINER" \
 
 echo "backup_postgres: wrote $OUT ($(du -h "$OUT" | cut -f1))"
 
+# Heartbeat for /ops backup card (ISO UTC, one line). API reads via OPS_BACKUP_HEARTBEAT_PATH or default path.
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"${BACKUP_ROOT}/.last_backup_heartbeat"
+
 find "$BACKUP_ROOT" -maxdepth 1 -name 'mls_*.dump' -mtime "+${RETAIN_DAYS}" -delete 2>/dev/null || true

@@ -20,16 +20,30 @@ def _scrape_mode_hint(job_key: str, argv_json: dict | list | None) -> str | None
     return None
 
 
+def _duration_line(detail: dict) -> str | None:
+    v = detail.get("duration_seconds")
+    if not isinstance(v, (int, float)):
+        return None
+    sec = float(v)
+    if sec >= 3600:
+        return f"Wall-clock duration: {sec / 3600:.2f} hours ({sec:,.0f} seconds)."
+    if sec >= 60:
+        return f"Wall-clock duration: {sec / 60:.1f} minutes ({sec:,.0f} seconds)."
+    return f"Wall-clock duration: {sec:.1f} seconds."
+
+
 def metric_lines(job_key: str, detail: dict | None, argv_json: dict | list | None = None) -> list[str]:
     lines: list[str] = []
     hint = _scrape_mode_hint(job_key, argv_json)
     if hint:
         lines.append(hint)
 
-    if not detail:
+    if detail is None:
         return [ln for ln in lines if ln]
 
     d = detail
+    if dur := _duration_line(d):
+        lines.append(dur)
 
     def fmt_int(k: str, label: str) -> None:
         v = d.get(k)
@@ -96,6 +110,20 @@ def headline_status(run: PipelineRun) -> str:
     return "Failed or stopped with an error"
 
 
+def error_summary(run: PipelineRun) -> str | None:
+    """One-line error from ``detail_json`` for failed runs (truncated for UI)."""
+    if run.exit_code == 0 or run.exit_code is None:
+        return None
+    detail = run.detail_json if isinstance(run.detail_json, dict) else {}
+    err = detail.get("error")
+    if err is None or err == "":
+        return None
+    s = str(err).strip()
+    if len(s) > 400:
+        return s[:397] + "..."
+    return s
+
+
 def build_ops_run_row(run: PipelineRun) -> dict[str, object]:
     h = help_for(run.job_key)
     detail = run.detail_json if isinstance(run.detail_json, dict) else {}
@@ -117,4 +145,5 @@ def build_ops_run_row(run: PipelineRun) -> dict[str, object]:
         "metric_lines": metric_lines(run.job_key, detail, argv_j),
         "detail_json": run.detail_json,
         "argv_json": run.argv_json,
+        "error_summary": error_summary(run),
     }

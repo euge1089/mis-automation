@@ -82,15 +82,20 @@ def finish_pipeline_run(
     if run_id is None:
         return
     finished = datetime.now(timezone.utc)
-    detail_safe = _json_safe(detail) if detail is not None else None
+    merged: dict[str, Any] = dict(detail) if detail else {}
     try:
         with SessionLocal() as session:
             row = session.get(PipelineRun, run_id)
             if row is None:
                 return
+            started = row.started_at
+            if started is not None:
+                if started.tzinfo is None:
+                    started = started.replace(tzinfo=timezone.utc)
+                merged["duration_seconds"] = round((finished - started).total_seconds(), 3)
             row.finished_at = finished
             row.exit_code = exit_code
-            row.detail_json = detail_safe
+            row.detail_json = _json_safe(merged)
             session.commit()
     except Exception:
         logger.exception("pipeline_run: finish failed for run_id=%s", run_id)

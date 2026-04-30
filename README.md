@@ -191,9 +191,14 @@ Geography note: MLS coverage is mostly implicit to the logged-in MLS account and
   - illustrative mortgage product presets (same defaults as dashboard UI)
 - Ops (pipeline health):
   - `GET /ops` — HTML dashboard (scheduled runs)
-  - `GET /ops/runs` — recent `pipeline.py` executions (`limit` query param)
+  - `GET /ops/overview` — health at a glance (last successes, listing count, optional host metrics when `OPS_EXTENDED_METRICS=1`)
+  - `GET /ops/disk` — disk usage for the project volume plus rough sizes of `downloads/`, `history/`, `logs/`
+  - `GET /ops/backup-status` — last Postgres backup heartbeat (see `OPS_BACKUP_HEARTBEAT_PATH` and `scripts/backup_postgres.sh`)
+  - `GET /ops/schedule-status` — catalog schedule hints vs latest run and latest success per job
+  - `GET /ops/runs` — recent `pipeline.py` executions (`limit`, `status=all|success|failed`, `sort=recent|failures_first`)
+  - `GET /ops/runs/{id}` — single run detail (includes `error_summary` when failed)
+  - `GET /ops/runs/{id}/log-excerpt` — log lines for one run (uses `PIPELINE_RUN_LOG_ANCHOR` lines written by `pipeline.py`)
   - `GET /ops/summary` — last successful run per job key
-  - `GET /ops/runs/{id}` — single run detail
   - Optional HTTP Basic auth when `OPS_BASIC_AUTH_USER` and `OPS_BASIC_AUTH_PASSWORD` are set in the environment.
 
 ## Frontend Dashboard (v1)

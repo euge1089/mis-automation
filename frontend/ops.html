@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/ops.css?v=3" />
+    <link rel="stylesheet" href="/static/ops.css?v=4" />
   </head>
   <body>
     <header class="ops-header">
@@ -24,6 +24,44 @@
       </div>
       <button type="button" id="refreshBtn" class="ops-btn">Refresh</button>
     </header>
+
+    <section class="ops-panel ops-guide">
+      <h2 title="Read top to bottom: health, then alerts, then detail">Quick guide</h2>
+      <ul class="ops-guide-list">
+        <li title="Shows when daily and weekly jobs last succeeded">
+          <strong>Health at a glance</strong> — last successful runs and how many listings are in the database.
+        </li>
+        <li title="Disk space on the server folder that holds this project">
+          <strong>Disk</strong> — free space and rough size of downloads, history, and logs.
+        </li>
+        <li title="Written when the nightly backup script finishes successfully">
+          <strong>Database backup</strong> — last heartbeat from the backup script (UTC).
+        </li>
+        <li title="Filters change which pipeline runs are listed">
+          <strong>Recent runs</strong> — filter by success/failure or put failures first.
+        </li>
+      </ul>
+    </section>
+
+    <section class="ops-panel">
+      <h2>Health at a glance</h2>
+      <p id="overviewStatus" class="ops-muted"></p>
+      <div id="overviewStrip" class="overview-strip"></div>
+      <div id="overviewFreshness" class="overview-fresh-wrap"></div>
+    </section>
+
+    <section class="ops-panel ops-two-col">
+      <div>
+        <h2>Disk space</h2>
+        <p id="diskStatus" class="ops-muted"></p>
+        <div id="diskCard" class="disk-card"></div>
+      </div>
+      <div>
+        <h2>Database backup</h2>
+        <p id="backupStatus" class="ops-muted"></p>
+        <div id="backupCard" class="disk-card"></div>
+      </div>
+    </section>
 
     <section class="ops-panel">
       <h2>Alerts &amp; automatic checks</h2>
@@ -56,7 +94,43 @@
     </section>
 
     <section class="ops-panel">
+      <h2 title="Compare expected timing to what actually ran">Schedule vs last run</h2>
+      <p class="ops-muted">Rough schedule hints from the catalog vs your latest attempt and latest success.</p>
+      <p id="scheduleStatus" class="ops-muted"></p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Job</th>
+              <th>Last run started (ET)</th>
+              <th>That run</th>
+              <th>Last success (ET)</th>
+            </tr>
+          </thead>
+          <tbody id="scheduleBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="ops-panel">
       <h2>Recent runs</h2>
+      <div class="runs-toolbar">
+        <label>
+          Show
+          <select id="runsStatusFilter">
+            <option value="all" selected>All</option>
+            <option value="success">Success only</option>
+            <option value="failed">Failed only</option>
+          </select>
+        </label>
+        <label>
+          Order
+          <select id="runsSortSelect">
+            <option value="recent" selected>Newest first</option>
+            <option value="failures_first">Failures first</option>
+          </select>
+        </label>
+      </div>
       <p id="runsStatus" class="ops-muted"></p>
       <div id="runsBody" class="ops-runs"></div>
     </section>
@@ -96,6 +170,6 @@
       </div>
     </dialog>
 
-    <script src="/static/ops.js?v=3"></script>
+    <script src="/static/ops.js?v=4"></script>
   </body>
 </html>

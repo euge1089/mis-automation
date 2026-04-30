@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from enum import Enum
 
 from pydantic import BaseModel, Field
 
@@ -118,6 +119,17 @@ class JobCatalogItemOut(BaseModel):
     schedule_hint: str
 
 
+class OpsRunStatusFilter(str, Enum):
+    all = "all"
+    success = "success"
+    failed = "failed"
+
+
+class OpsRunSort(str, Enum):
+    recent = "recent"
+    failures_first = "failures_first"
+
+
 class OpsRunRowOut(BaseModel):
     """Pipeline run plus plain-language fields for the ops UI."""
 
@@ -137,6 +149,7 @@ class OpsRunRowOut(BaseModel):
     metric_lines: list[str]
     detail_json: dict | None = None
     argv_json: dict | list | None = None
+    error_summary: str | None = None
 
 
 class DailyActiveDropStatusOut(BaseModel):
@@ -163,6 +176,62 @@ class OpsSummaryRow(BaseModel):
     last_success_at: datetime | None = None
     last_exit_code: int | None = None
     run_id: int | None = None
+
+
+class OpsLastSuccessOut(BaseModel):
+    finished_at: datetime | None = None
+    run_id: int | None = None
+
+
+class OpsActiveListingsFreshnessOut(BaseModel):
+    """Plain-language freshness; listing count when the DB is reachable."""
+
+    source: str = Field(default="proxy_and_count")
+    message: str
+    active_listing_count: int | None = None
+
+
+class OpsOverviewOut(BaseModel):
+    api_ok: bool = True
+    last_success_daily_active: OpsLastSuccessOut | None = None
+    last_success_weekly: OpsLastSuccessOut | None = None
+    last_success_load_db: OpsLastSuccessOut | None = None
+    active_listings_freshness: OpsActiveListingsFreshnessOut
+    extended_host_metrics: dict[str, str] | None = None
+
+
+class OpsDiskOut(BaseModel):
+    project_path: str
+    filesystem_total_bytes: int
+    filesystem_used_bytes: int
+    filesystem_free_bytes: int
+    filesystem_used_pct: float
+    heavy_dirs_bytes: dict[str, int | None]
+
+
+class OpsBackupStatusOut(BaseModel):
+    status: str
+    message: str
+    heartbeat_path: str | None = None
+    last_backup_utc: str | None = None
+
+
+class OpsLogExcerptOut(BaseModel):
+    run_id: int
+    job_key: str
+    resolved_path: str | None = None
+    content: str
+    note: str | None = None
+
+
+class OpsScheduleRowOut(BaseModel):
+    job_key: str
+    title: str
+    schedule_hint: str
+    last_run_started_at: datetime | None = None
+    last_run_finished_at: datetime | None = None
+    last_run_exit_code: int | None = None
+    last_success_at: datetime | None = None
 
 
 class RentedListingHistoryOut(BaseModel):

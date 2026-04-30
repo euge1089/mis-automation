@@ -19,6 +19,22 @@ function escapeAttr(s) {
   return escapeHtml(s).replace(/'/g, "&#39;");
 }
 
+function fmtBytes(n) {
+  if (n == null || typeof n !== "number") return "—";
+  const gb = n / 1024 ** 3;
+  if (gb >= 1) return `${gb.toFixed(2)} GB`;
+  const mb = n / 1024 ** 2;
+  if (mb >= 1) return `${mb.toFixed(1)} MB`;
+  const kb = n / 1024;
+  return `${kb.toFixed(0)} KB`;
+}
+
+function truncateErr(s, maxLen) {
+  if (!s) return "";
+  if (s.length <= maxLen) return s;
+  return s.slice(0, maxLen) + "…";
+}
+
 async function loadAlerts() {
   const statusEl = document.getElementById("alertsStatus");
   const body = document.getElementById("alertsBody");
@@ -126,6 +142,147 @@ async function loadSummary() {
   }
 }
 
+function cardLast(label, snap, hint) {
+  const fin = snap && snap.finished_at ? fmtEt(snap.finished_at) : "—";
+  const rid = snap && snap.run_id != null ? `#${snap.run_id}` : "—";
+  return `
+    <article class="overview-card" title="${escapeAttr(hint)}">
+      <p class="overview-card-label">${escapeHtml(label)}</p>
+      <p class="overview-card-main">${fin}</p>
+      <p class="overview-card-meta">Run ${escapeHtml(rid)}</p>
+    </article>
+  `;
+}
+
+async function loadOverview() {
+  const el = document.getElementById("overviewStatus");
+  const strip = document.getElementById("overviewStrip");
+  const fresh = document.getElementById("overviewFreshness");
+  el.textContent = "Loading…";
+  strip.innerHTML = "";
+  fresh.textContent = "";
+  try {
+    const r = await fetch("/ops/overview");
+    if (!r.ok) throw new Error(r.statusText);
+    const o = await r.json();
+    el.textContent = "";
+    strip.innerHTML = [
+      cardLast(
+        "Daily listings job",
+        o.last_success_daily_active,
+        "Last time the daily active listings pipeline finished without errors."
+      ),
+      cardLast(
+        "Weekly sold & rented job",
+        o.last_success_weekly,
+        "Last time the weekly sold/rented pipeline finished without errors."
+      ),
+      cardLast(
+        "Load database job",
+        o.last_success_load_db,
+        "Last time load-db finished OK (if you run it on its own schedule)."
+      ),
+    ].join("");
+    const fr = o.active_listings_freshness || {};
+    fresh.innerHTML = `<p class="overview-fresh">${escapeHtml(fr.message || "")}</p>`;
+    if (o.extended_host_metrics && Object.keys(o.extended_host_metrics).length) {
+      const bits = Object.entries(o.extended_host_metrics)
+        .map(([k, v]) => `${k}: ${escapeHtml(String(v))}`)
+        .join(" · ");
+      fresh.innerHTML += `<p class="ops-muted small">${bits}</p>`;
+    }
+  } catch (e) {
+    el.textContent = "Could not load overview: " + e.message;
+  }
+}
+
+async function loadDisk() {
+  const el = document.getElementById("diskStatus");
+  const box = document.getElementById("diskCard");
+  el.textContent = "Loading…";
+  box.innerHTML = "";
+  try {
+    const r = await fetch("/ops/disk");
+    if (!r.ok) throw new Error(r.statusText);
+    const d = await r.json();
+    el.textContent = "";
+    const pct = d.filesystem_used_pct;
+    const heavy = d.heavy_dirs_bytes || {};
+    const heavyLines = ["downloads", "history", "logs"]
+      .filter((k) => Object.prototype.hasOwnProperty.call(heavy, k))
+      .map((k) => {
+        const b = heavy[k];
+        return `<li><code>${escapeHtml(k)}</code>: ${b != null ? escapeHtml(fmtBytes(b)) : "—"}</li>`;
+      })
+      .join("");
+    box.innerHTML = `
+      <p class="disk-line"><strong>${pct}%</strong> of disk in use on this server’s project volume.</p>
+      <p class="disk-line">About <strong>${fmtBytes(d.filesystem_free_bytes)}</strong> free of ${fmtBytes(
+        d.filesystem_total_bytes
+      )} total.</p>
+      <p class="ops-muted small">Heavy folders under the project (approximate size):</p>
+      <ul class="disk-heavy">${heavyLines}</ul>
+    `;
+  } catch (e) {
+    el.textContent = "Could not load disk info: " + e.message;
+  }
+}
+
+async function loadBackup() {
+  const el = document.getElementById("backupStatus");
+  const box = document.getElementById("backupCard");
+  el.textContent = "Loading…";
+  box.innerHTML = "";
+  try {
+    const r = await fetch("/ops/backup-status");
+    if (!r.ok) throw new Error(r.statusText);
+    const b = await r.json();
+    el.textContent = "";
+    const pathLine = b.heartbeat_path
+      ? `<p class="ops-muted small">File: ${escapeHtml(b.heartbeat_path)}</p>`
+      : "";
+    box.innerHTML = `
+      <p>${escapeHtml(b.message)}</p>
+      <p class="disk-line"><strong>Last backup (UTC):</strong> ${escapeHtml(b.last_backup_utc || "—")}</p>
+      ${pathLine}
+    `;
+  } catch (e) {
+    el.textContent = "Could not load backup status: " + e.message;
+  }
+}
+
+async function loadSchedule() {
+  const el = document.getElementById("scheduleStatus");
+  const body = document.getElementById("scheduleBody");
+  el.textContent = "Loading…";
+  body.innerHTML = "";
+  try {
+    const r = await fetch("/ops/schedule-status");
+    if (!r.ok) throw new Error(r.statusText);
+    const rows = await r.json();
+    el.textContent = rows.length ? "" : "No jobs in catalog.";
+    for (const row of rows) {
+      const tr = document.createElement("tr");
+      const exit = row.last_run_exit_code;
+      const exitLabel =
+        exit == null ? "—" : exit === 0 ? "OK" : `Exit ${exit}`;
+      tr.innerHTML = `
+        <td>
+          <div class="cell-title">${escapeHtml(row.title)}</div>
+          <div class="cell-meta"><code>${escapeHtml(row.job_key)}</code></div>
+          <div class="cell-sub">${escapeHtml(row.schedule_hint)}</div>
+        </td>
+        <td>${fmtEt(row.last_run_started_at)}</td>
+        <td>${escapeHtml(exitLabel)}</td>
+        <td>${fmtEt(row.last_success_at)}</td>
+      `;
+      body.appendChild(tr);
+    }
+  } catch (e) {
+    el.textContent = "Could not load schedule table: " + e.message;
+  }
+}
+
 function runCardClass(row) {
   if (row.exit_code == null) return "run-card unknown";
   return row.exit_code === 0 ? "run-card ok" : "run-card bad";
@@ -144,10 +301,9 @@ function technicalDetails(row) {
 }
 
 async function fetchLogTail(jobKey, lines = 320) {
-  const r = await fetch(
-    `/ops/log-tail?job_key=${encodeURIComponent(jobKey)}&lines=${lines}`,
-    { credentials: "same-origin" }
-  );
+  const r = await fetch(`/ops/log-tail?job_key=${encodeURIComponent(jobKey)}&lines=${lines}`, {
+    credentials: "same-origin",
+  });
   if (!r.ok) throw new Error(r.statusText);
   return r.json();
 }
@@ -175,13 +331,44 @@ async function openLogModal(jobKey) {
   }
 }
 
+async function openRunExcerptModal(runId) {
+  const modal = document.getElementById("logModal");
+  const title = document.getElementById("logModalTitle");
+  const pathEl = document.getElementById("logModalPath");
+  const body = document.getElementById("logModalBody");
+  title.textContent = `Log excerpt · run #${runId}`;
+  pathEl.textContent = "Loading…";
+  body.textContent = "";
+  if (typeof modal.showModal === "function") modal.showModal();
+  try {
+    const r = await fetch(`/ops/runs/${encodeURIComponent(runId)}/log-excerpt?max_lines=250`, {
+      credentials: "same-origin",
+    });
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    pathEl.textContent = data.resolved_path ? data.resolved_path : "—";
+    let text = data.content || "(empty)";
+    if (data.note) text += `\n\n---\n${data.note}`;
+    body.textContent = text;
+  } catch (e) {
+    pathEl.textContent = "";
+    body.textContent = "Could not load log excerpt: " + e.message;
+  }
+}
+
+function runsQueryParams() {
+  const status = document.getElementById("runsStatusFilter")?.value || "all";
+  const sort = document.getElementById("runsSortSelect")?.value || "recent";
+  return new URLSearchParams({ limit: "50", status, sort });
+}
+
 async function loadRuns() {
   const el = document.getElementById("runsStatus");
   const body = document.getElementById("runsBody");
   el.textContent = "Loading…";
   body.innerHTML = "";
   try {
-    const r = await fetch("/ops/runs?limit=50");
+    const r = await fetch(`/ops/runs?${runsQueryParams()}`);
     if (!r.ok) throw new Error(r.statusText);
     const rows = await r.json();
     el.textContent = rows.length ? "" : "No runs yet — run a pipeline or wait for cron.";
@@ -194,6 +381,12 @@ async function loadRuns() {
           ? `<ul class="run-metrics">${row.metric_lines.map((ln) => `<li>${escapeHtml(ln)}</li>`).join("")}</ul>`
           : '<p class="ops-muted small">No saved counts for this job type yet (older runs or jobs without file metrics).</p>';
 
+      const errBlock = row.error_summary
+        ? `<p class="run-err" title="${escapeAttr(row.error_summary)}"><strong>Error:</strong> ${escapeHtml(
+            truncateErr(row.error_summary, 200)
+          )}</p>`
+        : "";
+
       article.innerHTML = `
         <header class="run-head">
           <div>
@@ -204,10 +397,14 @@ async function loadRuns() {
           <span class="run-badge">${escapeHtml(row.headline_status)}</span>
         </header>
         <p class="run-success">${escapeHtml(row.success_message)}</p>
+        ${errBlock}
         ${metrics}
-        <p class="run-actions">
+        <p class="run-actions run-actions-row">
+          <button type="button" class="ops-btn-secondary" data-run-excerpt="${row.id}">
+            Log lines for this run
+          </button>
           <button type="button" class="ops-btn-secondary" data-log-job="${escapeAttr(row.job_key)}">
-            View rolling server log for this job type
+            Rolling log (whole file tail)
           </button>
         </p>
         <p class="run-meta">
@@ -225,15 +422,36 @@ async function loadRuns() {
 }
 
 async function refresh() {
-  await Promise.all([loadAlerts(), loadCatalog(), loadSummary(), loadRuns()]);
+  await Promise.all([
+    loadOverview(),
+    loadDisk(),
+    loadBackup(),
+    loadAlerts(),
+    loadCatalog(),
+    loadSummary(),
+    loadSchedule(),
+    loadRuns(),
+  ]);
 }
 
 document.getElementById("refreshBtn").addEventListener("click", refresh);
 
 document.getElementById("runsBody").addEventListener("click", (e) => {
+  const ex = e.target.closest("[data-run-excerpt]");
+  if (ex) {
+    openRunExcerptModal(parseInt(ex.getAttribute("data-run-excerpt"), 10));
+    return;
+  }
   const btn = e.target.closest("[data-log-job]");
   if (!btn) return;
   openLogModal(btn.getAttribute("data-log-job"));
+});
+
+document.getElementById("runsStatusFilter").addEventListener("change", () => {
+  loadRuns();
+});
+document.getElementById("runsSortSelect").addEventListener("change", () => {
+  loadRuns();
 });
 
 document.getElementById("logModalClose").addEventListener("click", () => {

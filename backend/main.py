@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import desc, func, select, text
+from sqlalchemy import and_, case, desc, func, select, text
 from sqlalchemy.orm import Session
 
 import pandas as pd
@@ -27,16 +27,28 @@ from backend.finance_provider import mortgage_presets_payload
 from backend.nominatim_geocode import geocode_one_listing, load_query_cache, save_query_cache
 from backend.ops_alerts import alert_settings, daily_active_drop_status
 from backend.ops_catalog import JOB_HELP, help_for
+from backend.ops_backup import read_backup_status
+from backend.ops_disk import disk_usage_snapshot, extended_host_metrics_if_enabled
 from backend.ops_enrichment import build_ops_run_row
-from backend.ops_logs import read_log_tail
+from backend.ops_logs import read_log_tail, read_run_log_excerpt
+from backend.ops_schedule import build_schedule_rows
 from backend.schemas import (
     ActiveListingOut,
     DailyActiveDropStatusOut,
     GeocodeBatchIn,
     GeocodeUpdateOut,
     JobCatalogItemOut,
+    OpsActiveListingsFreshnessOut,
     OpsAlertsBundleOut,
+    OpsBackupStatusOut,
+    OpsDiskOut,
+    OpsLogExcerptOut,
+    OpsLastSuccessOut,
+    OpsOverviewOut,
     OpsRunRowOut,
+    OpsRunSort,
+    OpsRunStatusFilter,
+    OpsScheduleRowOut,
     OpsSummaryRow,
     RentedListingHistoryOut,
     RentByZipBedroomOut,
@@ -49,6 +61,24 @@ from backend.zip_normalize import normalize_us_zip_5, zip_column_eq_normalized
 app = FastAPI(title="MLS Analytics API", version="0.1.0")
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = PROJECT_DIR / "frontend"
+
+
+def _last_success_for_job(db: Session, job_key: str) -> OpsLastSuccessOut | None:
+    r = (
+        db.execute(
+            select(PipelineRun)
+            .where(PipelineRun.job_key == job_key)
+            .where(PipelineRun.exit_code == 0)
+            .where(PipelineRun.finished_at.isnot(None))
+            .order_by(desc(PipelineRun.finished_at))
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    if r is None:
+        return None
+    return OpsLastSuccessOut(finished_at=r.finished_at, run_id=r.id)
 
 
 def _load_sold_df(db: Session) -> pd.DataFrame:
@@ -180,14 +210,110 @@ def ops_alerts_bundle(db: Session = Depends(get_db)) -> OpsAlertsBundleOut:
     )
 
 
+@app.get("/ops/overview", response_model=OpsOverviewOut, dependencies=[Depends(require_ops_auth)])
+def ops_overview(db: Session = Depends(get_db)) -> OpsOverviewOut:
+    """Health-at-a-glance: last successful runs and listing count when available."""
+    daily = _last_success_for_job(db, "daily-active")
+    weekly = _last_success_for_job(db, "weekly-sold-rented")
+    load_db = _last_success_for_job(db, "load-db")
+    count: int | None = None
+    try:
+        count = db.scalar(select(func.count()).select_from(ActiveListing))
+    except Exception:
+        count = None
+    parts: list[str] = []
+    if daily and daily.finished_at:
+        parts.append(
+            "The daily listings refresh last finished OK at the times shown on this page (US Eastern)."
+        )
+    else:
+        parts.append("No successful daily listings refresh has been recorded yet.")
+    if count is not None:
+        parts.append(f"About {count:,} active listings are stored in the database now.")
+    else:
+        parts.append("Active listing count could not be read from the database.")
+    freshness = OpsActiveListingsFreshnessOut(
+        message=" ".join(parts),
+        active_listing_count=count,
+    )
+    ext = extended_host_metrics_if_enabled()
+    return OpsOverviewOut(
+        last_success_daily_active=daily,
+        last_success_weekly=weekly,
+        last_success_load_db=load_db,
+        active_listings_freshness=freshness,
+        extended_host_metrics=ext,
+    )
+
+
+@app.get("/ops/disk", response_model=OpsDiskOut, dependencies=[Depends(require_ops_auth)])
+def ops_disk() -> OpsDiskOut:
+    """Disk space for the filesystem that holds the project and heavy subfolders."""
+    return OpsDiskOut(**disk_usage_snapshot(PROJECT_DIR))
+
+
+@app.get("/ops/backup-status", response_model=OpsBackupStatusOut, dependencies=[Depends(require_ops_auth)])
+def ops_backup_status() -> OpsBackupStatusOut:
+    """Last Postgres backup heartbeat (written by backup_postgres.sh)."""
+    return read_backup_status(PROJECT_DIR)
+
+
+@app.get("/ops/schedule-status", response_model=list[OpsScheduleRowOut], dependencies=[Depends(require_ops_auth)])
+def ops_schedule_status(db: Session = Depends(get_db)) -> list[OpsScheduleRowOut]:
+    """Expected schedule hints vs latest run and latest success per job."""
+    rows = build_schedule_rows(db)
+    return [OpsScheduleRowOut(**r) for r in rows]
+
+
 @app.get("/ops/runs", response_model=list[OpsRunRowOut], dependencies=[Depends(require_ops_auth)])
 def list_pipeline_runs(
     limit: int = Query(default=50, ge=1, le=500),
+    status: OpsRunStatusFilter = Query(default=OpsRunStatusFilter.all),
+    sort: OpsRunSort = Query(default=OpsRunSort.recent),
     db: Session = Depends(get_db),
 ) -> list[OpsRunRowOut]:
-    stmt = select(PipelineRun).order_by(desc(PipelineRun.started_at)).limit(limit)
+    stmt = select(PipelineRun)
+    if status == OpsRunStatusFilter.success:
+        stmt = stmt.where(PipelineRun.exit_code == 0)
+    elif status == OpsRunStatusFilter.failed:
+        stmt = stmt.where(and_(PipelineRun.exit_code.isnot(None), PipelineRun.exit_code != 0))
+    if sort == OpsRunSort.failures_first:
+        fail_first = case(
+            (and_(PipelineRun.exit_code.isnot(None), PipelineRun.exit_code != 0), 0),
+            else_=1,
+        )
+        stmt = stmt.order_by(fail_first.asc(), desc(PipelineRun.started_at))
+    else:
+        stmt = stmt.order_by(desc(PipelineRun.started_at))
+    stmt = stmt.limit(limit)
     rows = list(db.execute(stmt).scalars().all())
     return [OpsRunRowOut(**build_ops_run_row(r)) for r in rows]
+
+
+@app.get(
+    "/ops/runs/{run_id}/log-excerpt",
+    response_model=OpsLogExcerptOut,
+    dependencies=[Depends(require_ops_auth)],
+)
+def ops_run_log_excerpt(
+    run_id: int,
+    max_lines: int = Query(default=200, ge=10, le=500),
+    db: Session = Depends(get_db),
+) -> OpsLogExcerptOut:
+    """Log lines for one run (anchored by PIPELINE_RUN_LOG_ANCHOR in rolling job logs)."""
+    row = db.get(PipelineRun, run_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    path_str, content, note = read_run_log_excerpt(
+        PROJECT_DIR, row.job_key, run_id, max_lines=max_lines
+    )
+    return OpsLogExcerptOut(
+        run_id=run_id,
+        job_key=row.job_key,
+        resolved_path=path_str,
+        content=content or "",
+        note=note,
+    )
 
 
 @app.get("/ops/summary", response_model=list[OpsSummaryRow], dependencies=[Depends(require_ops_auth)])

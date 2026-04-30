@@ -364,6 +364,8 @@ def main() -> None:
 
     argv_snapshot = format_argv_for_log(args)
     run_id = begin_pipeline_run(args.command, argv_snapshot)
+    if run_id is not None:
+        print(f"PIPELINE_RUN_LOG_ANCHOR id={run_id} job={args.command}", flush=True)
     exit_code = 0
     detail: dict[str, object] = {}
     try:
