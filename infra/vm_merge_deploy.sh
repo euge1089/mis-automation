@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
 # Run ON the VM after rsync from your laptop copied code to ~/mls-automation-deploy/
-# Usage: ssh mlsops@YOUR_DROPLET_IP   then:   bash ~/mls-automation-deploy/infra/vm_merge_deploy.sh
+# Usage: ssh mlsops@YOUR_DROPLET_IP   then:   sudo bash ~/mls-automation-deploy/infra/vm_merge_deploy.sh
+#
+# When you use `sudo`, HOME becomes /root — we resolve the real user's home via SUDO_USER
+# so DEPLOY stays /home/mlsops/mls-automation-deploy (see MLS_DEPLOY_DIR override below).
 set -euo pipefail
-DEPLOY="${HOME}/mls-automation-deploy"
+
+if [[ -n "${MLS_DEPLOY_DIR:-}" ]]; then
+  DEPLOY="${MLS_DEPLOY_DIR}"
+elif [[ -n "${SUDO_USER:-}" ]]; then
+  DEPLOY="$(getent passwd "${SUDO_USER}" | cut -d: -f6)/mls-automation-deploy"
+else
+  DEPLOY="${HOME}/mls-automation-deploy"
+fi
+
 DEST="/opt/mls-automation"
 if [[ ! -d "${DEPLOY}" ]]; then
   echo "Missing ${DEPLOY}. From your computer run rsync to this folder first." >&2
