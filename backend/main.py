@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
+import secrets
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import desc, func, select, text
@@ -18,15 +20,24 @@ from backend.models import (
     RentByZipBedroom,
     RentByZipSqft,
     RentedListingHistory,
+    SoldAnalyticsSnapshot,
     SoldListingHistory,
 )
+from backend.finance_provider import mortgage_presets_payload
 from backend.nominatim_geocode import geocode_one_listing, load_query_cache, save_query_cache
+from backend.ops_alerts import alert_settings, daily_active_drop_status
+from backend.ops_catalog import JOB_HELP, help_for
+from backend.ops_enrichment import build_ops_run_row
+from backend.ops_logs import read_log_tail
 from backend.schemas import (
     ActiveListingOut,
+    DailyActiveDropStatusOut,
     GeocodeBatchIn,
     GeocodeUpdateOut,
+    JobCatalogItemOut,
+    OpsAlertsBundleOut,
+    OpsRunRowOut,
     OpsSummaryRow,
-    PipelineRunOut,
     RentedListingHistoryOut,
     RentByZipBedroomOut,
     RentByZipSqftOut,
@@ -38,27 +49,67 @@ from backend.zip_normalize import normalize_us_zip_5, zip_column_eq_normalized
 app = FastAPI(title="MLS Analytics API", version="0.1.0")
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = PROJECT_DIR / "frontend"
-SOLD_CLEAN_PATH = PROJECT_DIR / "cleaned" / "sold_clean_latest.csv"
-
-_sold_df_cache: pd.DataFrame | None = None
 
 
-def _load_sold_df() -> pd.DataFrame:
-    """Load cached cleaned sold CSV for analytics endpoints."""
-    global _sold_df_cache
-    if _sold_df_cache is not None:
-        return _sold_df_cache
-    if not SOLD_CLEAN_PATH.exists():
-        raise FileNotFoundError(f"Sold data not found: {SOLD_CLEAN_PATH}")
-    df = pd.read_csv(SOLD_CLEAN_PATH, low_memory=False)
-    # Normalize key columns we rely on.
-    for col in ["sale_price", "bedrooms", "zip_code", "town", "property_type_clean", "settled_date"]:
-        if col not in df.columns:
-            raise ValueError(f"sold_clean_latest.csv missing required column: {col}")
-    # Parse settled_date to datetime for time windows & monthly grouping.
+def _load_sold_df(db: Session) -> pd.DataFrame:
+    """Load sold analytics rows from DB snapshot (refreshed by ``load_to_db.py``)."""
+    stmt = select(SoldAnalyticsSnapshot)
+    rows = list(db.scalars(stmt).all())
+    if not rows:
+        raise ValueError(
+            "Sold analytics snapshot is empty. Run monthly or weekly-sold-rented, then: python pipeline.py load-db"
+        )
+    records = []
+    for r in rows:
+        records.append(
+            {
+                "mls_id": r.mls_id,
+                "settled_date": r.settled_date,
+                "sale_price": r.sale_price,
+                "bedrooms": r.bedrooms,
+                "total_baths": r.total_baths,
+                "square_feet": r.square_feet,
+                "zip_code": r.zip_code,
+                "town": r.town,
+                "property_type_clean": r.property_type_clean,
+                "dataset_type": r.dataset_type,
+                "full_address": r.full_address,
+                "address": r.address,
+                "sale_year": r.sale_year,
+            }
+        )
+    df = pd.DataFrame(records)
     df["settled_dt"] = pd.to_datetime(df["settled_date"], errors="coerce", utc=True)
-    _sold_df_cache = df
     return df
+
+
+def _require_ops_basic_auth(request: Request) -> None:
+    """Optional HTTP Basic auth for ops routes when OPS_BASIC_AUTH_USER/PASSWORD are set."""
+    user = os.environ.get("OPS_BASIC_AUTH_USER", "").strip()
+    password = os.environ.get("OPS_BASIC_AUTH_PASSWORD", "").strip()
+    if not user or not password:
+        return
+    auth = request.headers.get("authorization") or ""
+    if not auth.lower().startswith("basic "):
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Basic realm=ops"},
+        )
+    try:
+        import base64
+
+        payload = base64.b64decode(auth.split(" ", 1)[1].strip()).decode("utf-8")
+        u, _, p = payload.partition(":")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid Authorization header") from None
+    if not (secrets.compare_digest(u, user) and secrets.compare_digest(p, password)):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+
+def require_ops_auth(request: Request) -> None:
+    """Dependency: enforce optional Basic auth for ops JSON/HTML routes."""
+    _require_ops_basic_auth(request)
 
 
 @app.on_event("startup")
@@ -89,7 +140,7 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/ops")
+@app.get("/ops", dependencies=[Depends(require_ops_auth)])
 def ops_dashboard() -> FileResponse:
     """Operations dashboard (pipeline runs)."""
     path = FRONTEND_DIR / "ops.html"
@@ -98,16 +149,48 @@ def ops_dashboard() -> FileResponse:
     return FileResponse(path)
 
 
-@app.get("/ops/runs", response_model=list[PipelineRunOut])
+@app.get("/ops/catalog", response_model=list[JobCatalogItemOut], dependencies=[Depends(require_ops_auth)])
+def ops_job_catalog() -> list[JobCatalogItemOut]:
+    """Plain-language descriptions of each scheduled pipeline command."""
+    return [
+        JobCatalogItemOut(
+            job_key=key,
+            title=h.title,
+            one_liner=h.one_liner,
+            what_it_does=h.what_it_does,
+            success_means=h.success_means,
+            schedule_hint=h.schedule_hint,
+        )
+        for key, h in sorted(JOB_HELP.items(), key=lambda kv: kv[1].title.lower())
+    ]
+
+
+@app.get("/ops/alerts", response_model=OpsAlertsBundleOut, dependencies=[Depends(require_ops_auth)])
+def ops_alerts_bundle(db: Session = Depends(get_db)) -> OpsAlertsBundleOut:
+    """Alert configuration (no secrets) and derived status (e.g. active listing drop check)."""
+    settings = alert_settings()
+    threshold = float(settings["active_drop_threshold_pct"])
+    drop = daily_active_drop_status(db, threshold)
+    return OpsAlertsBundleOut(
+        slack_configured=bool(settings["slack_configured"]),
+        active_drop_threshold_pct=float(settings["active_drop_threshold_pct"]),
+        sold_rent_min_rows=int(settings["sold_rent_min_rows"]),
+        alert_blurbs=dict(settings["alert_blurbs"]),
+        daily_active_drop=DailyActiveDropStatusOut(**drop),
+    )
+
+
+@app.get("/ops/runs", response_model=list[OpsRunRowOut], dependencies=[Depends(require_ops_auth)])
 def list_pipeline_runs(
     limit: int = Query(default=50, ge=1, le=500),
     db: Session = Depends(get_db),
-) -> list[PipelineRun]:
+) -> list[OpsRunRowOut]:
     stmt = select(PipelineRun).order_by(desc(PipelineRun.started_at)).limit(limit)
-    return list(db.execute(stmt).scalars().all())
+    rows = list(db.execute(stmt).scalars().all())
+    return [OpsRunRowOut(**build_ops_run_row(r)) for r in rows]
 
 
-@app.get("/ops/summary", response_model=list[OpsSummaryRow])
+@app.get("/ops/summary", response_model=list[OpsSummaryRow], dependencies=[Depends(require_ops_auth)])
 def ops_summary(db: Session = Depends(get_db)) -> list[OpsSummaryRow]:
     """Latest successful finish time per ``job_key`` (scheduled pipeline commands)."""
     rows = list(
@@ -126,9 +209,12 @@ def ops_summary(db: Session = Depends(get_db)) -> list[OpsSummaryRow]:
         if r.job_key in seen:
             continue
         seen.add(r.job_key)
+        h = help_for(r.job_key)
         out.append(
             OpsSummaryRow(
                 job_key=r.job_key,
+                title=h.title,
+                one_liner=h.one_liner,
                 last_success_at=r.finished_at,
                 last_exit_code=r.exit_code,
                 run_id=r.id,
@@ -137,12 +223,27 @@ def ops_summary(db: Session = Depends(get_db)) -> list[OpsSummaryRow]:
     return out
 
 
-@app.get("/ops/runs/{run_id}", response_model=PipelineRunOut)
-def get_pipeline_run(run_id: int, db: Session = Depends(get_db)) -> PipelineRun:
+@app.get("/ops/log-tail", dependencies=[Depends(require_ops_auth)])
+def ops_log_tail(
+    job_key: str = Query(..., description="Pipeline job key, e.g. daily-active"),
+    lines: int = Query(default=300, ge=50, le=500),
+) -> dict[str, str | None]:
+    """Tail end of the rolling log file for a job (same files cron appends to)."""
+    path_str, content, err = read_log_tail(PROJECT_DIR, job_key, max_lines=lines)
+    return {
+        "job_key": job_key,
+        "resolved_path": path_str,
+        "content": content or "",
+        "error": err,
+    }
+
+
+@app.get("/ops/runs/{run_id}", response_model=OpsRunRowOut, dependencies=[Depends(require_ops_auth)])
+def get_pipeline_run(run_id: int, db: Session = Depends(get_db)) -> OpsRunRowOut:
     row = db.get(PipelineRun, run_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    return row
+    return OpsRunRowOut(**build_ops_run_row(row))
 
 
 @app.get("/sold-area-stats")
@@ -161,13 +262,12 @@ def sold_area_stats(
     """
     Area-level sold stats for homebuyers: typical prices, ranges, and recent trends.
 
-    Uses cleaned sold CSV, filtered by ZIP / town / bedrooms / property type, and
-    looks back roughly ``months_back`` months based on settled date.
+    Uses the DB snapshot refreshed by ``load_to_db`` from ``sold_clean_latest.csv``, filtered by ZIP /
+    town / bedrooms / property type, and looks back roughly ``months_back`` months based on settled date.
     """
-    from backend.zip_normalize import normalize_us_zip_5  # local import to avoid cycles
 
     try:
-        df = _load_sold_df()
+        df = _load_sold_df(db)
     except Exception as exc:  # pragma: no cover - simple error surface
         return {
             "summary": None,
@@ -260,9 +360,6 @@ def sold_area_stats(
     trend = sorted(trend, key=lambda r: r["month"])
 
     # Optional: current active listings snapshot in same area/filters.
-    from backend.models import ActiveListing
-    from backend.zip_normalize import zip_column_eq_normalized
-
     stmt = select(ActiveListing)
     if zip_code:
         z = normalize_us_zip_5(zip_code)
@@ -335,7 +432,7 @@ def sold_comps(
         return {"error": f"Active listing {mls_id!r} not found.", "subject": None, "summary": None, "comps": []}
 
     try:
-        df = _load_sold_df()
+        df = _load_sold_df(db)
     except Exception as exc:  # pragma: no cover - simple surface
         return {"error": str(exc), "subject": None, "summary": None, "comps": []}
 
@@ -622,6 +719,12 @@ def sold_history(
         stmt = stmt.where(zip_column_eq_normalized(SoldListingHistory.zip_code, zip_norm))
     stmt = stmt.order_by(SoldListingHistory.event_date.desc()).limit(limit)
     return list(db.execute(stmt).scalars().all())
+
+
+@app.get("/finance/mortgage-presets")
+def mortgage_presets() -> dict:
+    """Illustrative mortgage product presets (same contract as dashboard defaults)."""
+    return mortgage_presets_payload()
 
 
 @app.get("/history/rented", response_model=list[RentedListingHistoryOut])

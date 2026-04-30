@@ -11,6 +11,7 @@ PATH=/usr/local/bin:/usr/bin:/bin
 MLS_AUTOMATION_DIR=/Users/your-user/Documents/mls-automation
 
 # Daily active refresh at 2:15am local time.
+# This command now includes DB loading by default.
 15 2 * * * cd "$MLS_AUTOMATION_DIR" && /bin/bash scripts/run_scheduled_pipeline.sh daily-active --with-scrape --headless
 
 # Weekly sold/rented refresh + memorialization every Sunday at 3:30am.

@@ -1,4 +1,5 @@
 import argparse
+import logging
 from pathlib import Path
 import os
 import time
@@ -8,6 +9,8 @@ from playwright.sync_api import sync_playwright, TimeoutError
 from mls_result_count import get_search_page_result_count
 from scraper_adaptive import AdaptiveRangeState, find_valid_span
 from scraper_resume import MLS_DOWNLOAD_TIMEOUT_HINT, resolved_start_export_resume
+
+logger = logging.getLogger(__name__)
 
 # Legacy filename kept for compatibility. Prefer: python3 scrape_mls_sold.py
 
@@ -48,8 +51,8 @@ def wait_for_page_blocker_to_clear(page, timeout=30000):
     except Exception:
         try:
             blocker.wait_for(state="detached", timeout=2000)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("mainPageBlocker did not reach detached state: %s", exc)
     time.sleep(1)
 
 
@@ -83,8 +86,8 @@ def set_static_filters(page, timeframe: str):
         else:
             select_all_types.check(timeout=1000)
             select_all_types.uncheck(timeout=1000)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Select-all property types toggle failed (continuing): %s", exc)
 
     page.get_by_role("checkbox", name="Single Family Property Type").check()
     page.get_by_role("checkbox", name="Condominium Property Type").check()
@@ -97,8 +100,8 @@ def set_static_filters(page, timeframe: str):
         else:
             select_all_statuses.check(timeout=1000)
             select_all_statuses.uncheck(timeout=1000)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Select-all statuses toggle failed (continuing): %s", exc)
 
     page.get_by_role("checkbox", name="Sold Status").check()
 
@@ -122,8 +125,8 @@ def ensure_search_form_ready(page, timeframe: str):
         low_box.wait_for(timeout=3000)
         high_box.wait_for(timeout=3000)
         return
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Price boxes not visible yet (%s); navigating back to Search.", exc)
 
     print("Search form not ready. Returning to Search tab...")
     page.get_by_role("link", name="Search").click()

@@ -52,6 +52,31 @@ class RentByZipBedroom(Base):
     confidence: Mapped[str | None] = mapped_column(String(32))
 
 
+class SoldAnalyticsSnapshot(Base):
+    """
+    Replace-loaded mirror of ``cleaned/sold_clean_latest.csv`` for API analytics.
+
+    Populated by ``load_to_db.py`` so FastAPI does not read CSV files at runtime.
+    """
+
+    __tablename__ = "sold_analytics_snapshot"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mls_id: Mapped[str] = mapped_column(String(64), index=True)
+    settled_date: Mapped[date | None] = mapped_column(Date, index=True)
+    sale_price: Mapped[float | None] = mapped_column(Float)
+    bedrooms: Mapped[float | None] = mapped_column(Float)
+    total_baths: Mapped[float | None] = mapped_column(Float)
+    square_feet: Mapped[float | None] = mapped_column(Float)
+    zip_code: Mapped[str | None] = mapped_column(String(10), index=True)
+    town: Mapped[str | None] = mapped_column(String(128), index=True)
+    property_type_clean: Mapped[str | None] = mapped_column(String(64))
+    dataset_type: Mapped[str | None] = mapped_column(String(64))
+    full_address: Mapped[str | None] = mapped_column(Text)
+    address: Mapped[str | None] = mapped_column(Text)
+    sale_year: Mapped[int | None] = mapped_column(Integer)
+
+
 class RentByZipSqft(Base):
     __tablename__ = "rent_by_zip_sqft"
 

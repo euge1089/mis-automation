@@ -11,7 +11,7 @@ usage() {
 Usage:
   bash scripts/run_scheduled_pipeline.sh monthly [--with-scrape]
   bash scripts/run_scheduled_pipeline.sh weekly-sold-rented [--headless]
-  bash scripts/run_scheduled_pipeline.sh daily-active [--with-scrape] [--with-geocode]
+  bash scripts/run_scheduled_pipeline.sh daily-active [--with-scrape] [--with-geocode] [--no-load-db]
 
 Examples:
   bash scripts/run_scheduled_pipeline.sh monthly
@@ -45,6 +45,14 @@ trap 'rmdir "${LOCK_DIR}"' EXIT
 
 TIMESTAMP="$(date +"%Y-%m-%d_%H-%M-%S")"
 LOG_FILE="${LOG_DIR}/${COMMAND}_${TIMESTAMP}.log"
+
+ENV_FILE="${PROJECT_DIR}/.env"
+if [[ -f "${ENV_FILE}" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "${ENV_FILE}"
+  set +a
+fi
 
 if [[ -x "${PROJECT_DIR}/.venv/bin/python" ]]; then
   PYTHON_BIN="${PROJECT_DIR}/.venv/bin/python"

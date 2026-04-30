@@ -3,27 +3,40 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MLS Ops — Pipeline runs</title>
+    <title>MLS Ops — Jobs & health</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/ops.css?v=1" />
+    <link rel="stylesheet" href="/static/ops.css?v=3" />
   </head>
   <body>
     <header class="ops-header">
       <div>
         <p class="ops-eyebrow">Internal</p>
-        <h1>Pipeline runs</h1>
+        <h1>Pipeline &amp; data health</h1>
         <p class="ops-lede">
-          Scheduled jobs log here after each <code>pipeline.py</code> run (Boston time shown below).
-          <a href="/">← Back to app</a>
+          This page explains what each scheduled job does, how the last run went, and which automatic
+          checks are in place. Times are US Eastern. <a href="/">← Back to app</a>
         </p>
       </div>
       <button type="button" id="refreshBtn" class="ops-btn">Refresh</button>
     </header>
+
+    <section class="ops-panel">
+      <h2>Alerts &amp; automatic checks</h2>
+      <p id="alertsStatus" class="ops-muted"></p>
+      <div id="alertsBody" class="ops-alerts"></div>
+    </section>
+
+    <section class="ops-panel">
+      <h2>What each job does</h2>
+      <p class="ops-muted">Plain-language guide — you do not need to read server logs to understand these.</p>
+      <p id="catalogStatus" class="ops-muted"></p>
+      <div id="catalogBody" class="ops-catalog"></div>
+    </section>
 
     <section class="ops-panel">
       <h2>Last success by job</h2>
@@ -45,24 +58,44 @@
     <section class="ops-panel">
       <h2>Recent runs</h2>
       <p id="runsStatus" class="ops-muted"></p>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Job</th>
-              <th>Started (ET)</th>
-              <th>Finished (ET)</th>
-              <th>Exit</th>
-              <th>Host</th>
-              <th>Git</th>
-            </tr>
-          </thead>
-          <tbody id="runsBody"></tbody>
-        </table>
-      </div>
+      <div id="runsBody" class="ops-runs"></div>
     </section>
 
-    <script src="/static/ops.js?v=1"></script>
+    <section class="ops-panel">
+      <h2>Log viewer</h2>
+      <p class="ops-muted">
+        Opens the same rolling log file cron writes to (latest lines). This is the full detail behind each run.
+      </p>
+      <div class="log-viewer-bar">
+        <label>
+          Job
+          <select id="logJobSelect">
+            <option value="daily-active">daily-active</option>
+            <option value="weekly-sold-rented">weekly-sold-rented</option>
+            <option value="monthly">monthly</option>
+            <option value="load-db">load-db</option>
+          </select>
+        </label>
+        <button type="button" id="logViewerBtn" class="ops-btn-secondary">Load log tail</button>
+      </div>
+      <p id="logViewerPath" class="ops-muted small"></p>
+      <pre id="logViewerPre" class="run-pre log-viewer-pre" hidden></pre>
+    </section>
+
+    <dialog id="logModal" class="log-modal">
+      <div class="log-modal-box">
+        <header class="log-modal-head">
+          <div>
+            <p class="ops-eyebrow">Server log</p>
+            <h3 id="logModalTitle">Log</h3>
+            <p id="logModalPath" class="ops-muted small"></p>
+          </div>
+          <button type="button" id="logModalClose" class="ops-btn-secondary">Close</button>
+        </header>
+        <pre id="logModalBody" class="run-pre log-modal-pre"></pre>
+      </div>
+    </dialog>
+
+    <script src="/static/ops.js?v=3"></script>
   </body>
 </html>

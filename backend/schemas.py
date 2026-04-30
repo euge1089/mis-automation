@@ -109,8 +109,57 @@ class PipelineRunOut(BaseModel):
         from_attributes = True
 
 
+class JobCatalogItemOut(BaseModel):
+    job_key: str
+    title: str
+    one_liner: str
+    what_it_does: str
+    success_means: str
+    schedule_hint: str
+
+
+class OpsRunRowOut(BaseModel):
+    """Pipeline run plus plain-language fields for the ops UI."""
+
+    id: int
+    job_key: str
+    title: str
+    one_liner: str
+    what_it_does: str
+    schedule_hint: str
+    started_at: datetime
+    finished_at: datetime | None = None
+    exit_code: int | None = None
+    hostname: str | None = None
+    git_sha: str | None = None
+    headline_status: str
+    success_message: str
+    metric_lines: list[str]
+    detail_json: dict | None = None
+    argv_json: dict | list | None = None
+
+
+class DailyActiveDropStatusOut(BaseModel):
+    status: str
+    message: str
+    latest_count: int | None = None
+    previous_count: int | None = None
+    pct_change_vs_prior: float | None = None
+    threshold_pct: float
+
+
+class OpsAlertsBundleOut(BaseModel):
+    slack_configured: bool
+    active_drop_threshold_pct: float
+    sold_rent_min_rows: int
+    alert_blurbs: dict[str, str]
+    daily_active_drop: DailyActiveDropStatusOut
+
+
 class OpsSummaryRow(BaseModel):
     job_key: str
+    title: str | None = None
+    one_liner: str | None = None
     last_success_at: datetime | None = None
     last_exit_code: int | None = None
     run_id: int | None = None

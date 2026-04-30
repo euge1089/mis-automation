@@ -145,11 +145,16 @@ def run_daily_active_pipeline(run_scraper: bool, *, headless: bool = False) -> N
 
 
 def run_daily_active_pipeline_with_geocode(
-    run_scraper: bool, run_geocode: bool, *, headless: bool = False
+    run_scraper: bool,
+    run_geocode: bool,
+    run_load_db: bool,
+    *,
+    headless: bool = False,
 ) -> None:
     run_daily_active_pipeline(run_scraper=run_scraper, headless=headless)
     if run_geocode:
         _run_script("geocode_active.py", role="Geocoder")
+    if run_load_db:
         _run_script("load_to_db.py", role="DB loader")
 
 
@@ -256,6 +261,7 @@ def _dispatch_command(args: Namespace) -> None:
         run_daily_active_pipeline_with_geocode(
             run_scraper=args.with_scrape,
             run_geocode=args.with_geocode,
+            run_load_db=not args.no_load_db,
             headless=args.headless,
         )
     elif args.command == "validate-monthly":
@@ -330,7 +336,12 @@ def main() -> None:
     daily.add_argument(
         "--with-geocode",
         action="store_true",
-        help="Geocode active listings after cleaning and load to DB",
+        help="Geocode active listings after cleaning (before optional DB load).",
+    )
+    daily.add_argument(
+        "--no-load-db",
+        action="store_true",
+        help="Skip loading cleaned outputs into Postgres after daily active pipeline.",
     )
     daily.add_argument(
         "--headless",
@@ -366,7 +377,13 @@ def main() -> None:
         detail["error"] = repr(exc)
         raise
     finally:
-        finish_pipeline_run(run_id, exit_code=exit_code, detail=detail if detail else None)
+        try:
+            from backend.run_metrics import gather_run_metrics
+
+            detail.update(gather_run_metrics(args.command))
+        except Exception as mc:  # pragma: no cover - defensive
+            detail["metrics_collection_error"] = repr(mc)
+        finish_pipeline_run(run_id, exit_code=exit_code, detail=detail)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,10 @@ This project scrapes MLS exports, combines and cleans data, then builds analytic
 
 It now also includes a database-backed API foundation for your future client application.
 
+## Help for non-technical operators
+
+Step-by-step tasks only **you** can do (logging into GitHub, DigitalOcean, etc.) are in [docs/non_technical_operator_steps.md](docs/non_technical_operator_steps.md).
+
 ## Project Direction
 
 This repository is on a transition path:
@@ -15,6 +19,8 @@ Roadmap detail lives in:
 
 ## Quick Start
 
+- Optional — local overrides (gitignored):
+  - `cp .env.example .env` then edit only if you need custom URLs or MLS login (the app loads `.env` automatically).
 - Install dependencies:
   - `python3 -m pip install -r requirements.txt`
   - **Or (npm):** `npm run setup` once (creates `.venv` + installs deps), then `npm run dev`
@@ -67,7 +73,7 @@ Requires `downloads/active/active_export_*.csv` (from your scraper or copied in)
 
 1. `python3 pipeline.py daily-active`  
    If you have no active exports yet, use `python3 pipeline.py daily-active --with-scrape` (needs `.env` MLS credentials and a browser session).
-2. `python3 pipeline.py load-db` again — active listing count should be **> 0**.
+2. Active listings are loaded into Postgres automatically at the end of `daily-active` (unless you pass `--no-load-db`).
 
 **E — Geocoding (optional)**
 
@@ -100,6 +106,8 @@ Only when you are ready for long runs:
   - `python3 pipeline.py daily-active --with-scrape --headless`
 - Daily active pipeline + geocoding + DB load:
   - `python3 pipeline.py daily-active --with-scrape --with-geocode`
+- Daily active pipeline without DB load (advanced/manual mode):
+  - `python3 pipeline.py daily-active --no-load-db`
 - Validate monthly outputs only:
   - `python3 pipeline.py validate-monthly`
 - Validate daily active outputs only:
@@ -179,16 +187,19 @@ Geography note: MLS coverage is mostly implicit to the logged-in MLS account and
   - filters: `start_date`, `end_date`, `zip_code`, `limit`
 - `GET /history/rented`
   - filters: `start_date`, `end_date`, `zip_code`, `limit`
+- `GET /finance/mortgage-presets`
+  - illustrative mortgage product presets (same defaults as dashboard UI)
 - Ops (pipeline health):
   - `GET /ops` — HTML dashboard (scheduled runs)
   - `GET /ops/runs` — recent `pipeline.py` executions (`limit` query param)
   - `GET /ops/summary` — last successful run per job key
   - `GET /ops/runs/{id}` — single run detail
+  - Optional HTTP Basic auth when `OPS_BASIC_AUTH_USER` and `OPS_BASIC_AUTH_PASSWORD` are set in the environment.
 
 ## Frontend Dashboard (v1)
 
 - Served by FastAPI at `/`
-- Internal ops UI at `/ops` (pipeline run history; keep behind SSH tunnel or private network unless you add auth)
+- Internal ops UI at `/ops` (run history, **listing/file counts per job**, and **log viewer** for rolling server logs; keep behind SSH tunnel or private network, or set Basic auth env vars)
 - Includes:
   - active listing search filters
   - listing results table
@@ -208,10 +219,9 @@ Geography note: MLS coverage is mostly implicit to the logged-in MLS account and
 ## Database Notes
 
 - The PostGIS image tag used here is `amd64`. On Apple Silicon, Docker runs it under emulation; you may see a platform warning — that is normal.
-- Default local DB URL (used automatically if `DATABASE_URL` is not set):
-  - `postgresql+psycopg://mls_user:mls_pass@localhost:5432/mls_analytics`
-- Override with env var:
-  - `DATABASE_URL=...`
+- **`DATABASE_URL`** is optional on your personal computer when Postgres matches **Docker Compose** defaults (`docker-compose.yml`). The app auto-loads a file named **`.env`** in the project folder if you create one.
+- **Production server:** put your real Postgres URL in `.env` as `DATABASE_URL=...` and set **`MLS_PRODUCTION=1`** so the server never accidentally falls back to local defaults.
+- Sold analytics endpoints read Postgres table **`sold_analytics_snapshot`** (loaded from `sold_clean_latest.csv` when you run `load-db`). See [docs/analytics_refresh.md](docs/analytics_refresh.md).
 - Active listing table is replaced each load with latest daily active snapshot.
 - Rent-by-zip-bedroom table is replaced each load from latest analytics output.
 - Rent-by-zip-sqft table is replaced each load from latest analytics output.
@@ -237,6 +247,8 @@ Default scheduled jobs in the template:
   - `daily-active --with-scrape --headless`
 - weekly sold/rented scrape and memorialization every Sunday at 3:30am:
   - `weekly-sold-rented --headless`
+
+Note: `daily-active` now includes DB loading by default, so a separate scheduled `load-db` for active freshness is not required.
 
 Hosted recommendation:
 

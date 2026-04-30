@@ -17,10 +17,11 @@ Recommended for this repo: a small Linux VM with cron or systemd timers.
    - `.venv/bin/pip install -r requirements.txt`
 3. Install Playwright browser:
    - `.venv/bin/python -m playwright install chromium`
-4. Configure env:
+4. Configure a file named **`.env`** in the project folder (same level as `README.md`). The pipeline and API load it automatically. Include at least:
    - `MLS_USERNAME`
    - `MLS_PASSWORD`
-   - `DATABASE_URL`
+   - If Postgres on that machine matches Docker Compose defaults, you can omit `DATABASE_URL`.
+   - If Postgres uses a non-default URL or host, set `DATABASE_URL=...` and add **`MLS_PRODUCTION=1`** so the app never falls back to local defaults.
 5. Verify commands:
    - `.venv/bin/python pipeline.py weekly-sold-rented --headless --no-scrape`
    - `.venv/bin/python pipeline.py daily-active --with-scrape --headless`
@@ -31,6 +32,8 @@ Recommended for this repo: a small Linux VM with cron or systemd timers.
   - `bash scripts/run_scheduled_pipeline.sh weekly-sold-rented --headless`
 - Daily active:
   - `bash scripts/run_scheduled_pipeline.sh daily-active --with-scrape --headless`
+
+`daily-active` loads cleaned outputs into Postgres by default (use `--no-load-db` only for manual/troubleshooting runs).
 
 Template cron entries are in `infra/cron.example`.
 

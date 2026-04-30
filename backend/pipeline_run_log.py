@@ -82,7 +82,7 @@ def finish_pipeline_run(
     if run_id is None:
         return
     finished = datetime.now(timezone.utc)
-    detail_safe = _json_safe(detail) if detail else None
+    detail_safe = _json_safe(detail) if detail is not None else None
     try:
         with SessionLocal() as session:
             row = session.get(PipelineRun, run_id)

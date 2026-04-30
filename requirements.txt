@@ -1,7 +1,9 @@
-playwright
-python-dotenv
-pandas
-fastapi
-uvicorn
-sqlalchemy
-psycopg[binary]
+playwright==1.49.1
+python-dotenv==1.0.1
+pandas==2.2.3
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sqlalchemy==2.0.36
+psycopg[binary]==3.2.3
+pytest==8.3.4
+httpx==0.28.1

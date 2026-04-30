@@ -56,6 +56,38 @@ def validate_monthly_outputs() -> None:
             f"Validation failed: rent_by_zip_bedrooms.csv has unexpectedly few rows ({len(rent_model)})"
         )
 
+    sold_clean = pd.read_csv(CLEANED_DIR / "sold_clean_latest.csv", low_memory=False)
+    if "zip_code" in sold_clean.columns:
+        zip_series = sold_clean["zip_code"].astype("string").str.strip()
+        short_numeric = zip_series.str.fullmatch(r"\d{1,4}", na=False).sum()
+        if short_numeric > 0:
+            raise ValueError(
+                f"Validation failed: sold_clean_latest.csv has {short_numeric} short numeric ZIP values"
+            )
+
+    if "sale_price" in sold_clean.columns:
+        prices = pd.to_numeric(sold_clean["sale_price"], errors="coerce")
+        denom = max(len(sold_clean), 1)
+        bad_frac = float((prices.fillna(0) <= 0).sum()) / denom
+        if bad_frac > 0.05:
+            raise ValueError(
+                f"Validation failed: sold_clean_latest.csv has {bad_frac:.1%} rows with invalid sale_price"
+            )
+
+    if "bedrooms" in sold_clean.columns:
+        beds = pd.to_numeric(sold_clean["bedrooms"], errors="coerce")
+        insane = int(((beds > 25) | (beds < 0)).sum())
+        if insane > 0:
+            raise ValueError(f"Validation failed: sold_clean_latest.csv has {insane} impossible bedroom values")
+
+    if "settled_date" in sold_clean.columns:
+        parsed = pd.to_datetime(sold_clean["settled_date"], errors="coerce")
+        ok_rate = float(parsed.notna().sum()) / max(len(sold_clean), 1)
+        if ok_rate < 0.85:
+            raise ValueError(
+                f"Validation failed: sold_clean_latest.csv settled_date parse rate only {ok_rate:.1%}"
+            )
+
     print("Monthly data quality checks passed.")
 
 

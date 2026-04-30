@@ -12,6 +12,7 @@ from backend.models import (
     RentByZipBedroom,
     RentByZipSqft,
     RentedListingHistory,
+    SoldAnalyticsSnapshot,
     SoldListingHistory,
 )
 from backend.zip_normalize import normalize_us_zip_5
@@ -175,6 +176,74 @@ def load_rent_analytics(session) -> int:
 
     session.bulk_save_objects(rows)
     return len(rows)
+
+
+def load_sold_analytics_snapshot(session) -> int | None:
+    """
+    Replace-load ``sold_analytics_snapshot`` from ``sold_clean_latest.csv``.
+
+    Skips (returns ``None``) when the cleaned sold file is absent (e.g. daily-active-only machines).
+    """
+    path = CLEANED_DIR / "sold_clean_latest.csv"
+    if not path.exists():
+        print(
+            f"Skipping sold analytics snapshot; file not found: {path} "
+            "(expected after monthly or weekly sold/rented pipeline)."
+        )
+        return None
+
+    df = pd.read_csv(path, low_memory=False)
+    required = [
+        "mls_id",
+        "sale_price",
+        "bedrooms",
+        "zip_code",
+        "town",
+        "property_type_clean",
+        "dataset_type",
+        "settled_date",
+    ]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"sold_clean_latest.csv missing columns for analytics snapshot: {missing}")
+
+    for col in ["total_baths", "square_feet", "full_address", "address"]:
+        if col not in df.columns:
+            df[col] = None
+
+    session.execute(delete(SoldAnalyticsSnapshot))
+
+    parsed = pd.to_datetime(df["settled_date"], errors="coerce")
+    df = df.assign(_sd=parsed)
+    rows_out: list[SoldAnalyticsSnapshot] = []
+    for _, row in df.iterrows():
+        sd = row["_sd"]
+        settled = sd.date() if pd.notna(sd) else None
+        sale_year = int(settled.year) if settled else None
+        mls = str(row.get("mls_id") or "").strip()
+        if not mls:
+            continue
+        rows_out.append(
+            SoldAnalyticsSnapshot(
+                mls_id=mls,
+                settled_date=settled,
+                sale_price=_null_if_nan(row.get("sale_price")),
+                bedrooms=_null_if_nan(row.get("bedrooms")),
+                total_baths=_null_if_nan(row.get("total_baths")),
+                square_feet=_null_if_nan(row.get("square_feet")),
+                zip_code=_normalize_zip_cell(row.get("zip_code")),
+                town=_null_if_nan(row.get("town")),
+                property_type_clean=_null_if_nan(row.get("property_type_clean")),
+                dataset_type=_null_if_nan(row.get("dataset_type")),
+                full_address=_null_if_nan(row.get("full_address")),
+                address=_null_if_nan(row.get("address")),
+                sale_year=sale_year,
+            )
+        )
+
+    if rows_out:
+        session.bulk_save_objects(rows_out)
+    return len(rows_out)
 
 
 def load_rent_sqft_analytics(session) -> int:
@@ -341,11 +410,14 @@ def main() -> None:
         active_count = load_active_listings(session)
         rent_count = load_rent_analytics(session)
         rent_sqft_count = load_rent_sqft_analytics(session)
+        sold_snap = load_sold_analytics_snapshot(session)
         session.commit()
 
     print(f"Loaded active listings: {active_count:,}")
     print(f"Loaded rent-by-zip-bedroom rows: {rent_count:,}")
     print(f"Loaded rent-by-zip-sqft rows: {rent_sqft_count:,}")
+    if sold_snap is not None:
+        print(f"Loaded sold analytics snapshot rows: {sold_snap:,}")
 
 
 if __name__ == "__main__":
