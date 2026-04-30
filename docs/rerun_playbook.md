@@ -9,8 +9,9 @@ Use when you need to re-run a pipeline command without guessing whether data wil
 
 ## Weekly sold/rented (`weekly-sold-rented`)
 
-- **Memorialization** deletes history rows for each closed month window before re-inserting (`memorialize_history_window`), so reruns for the same window correct data instead of stacking duplicates.
-- The **rolling hot-window** CSV outputs refresh each week; `sold_analytics_snapshot` after `load-db` should match the latest `sold_clean_latest.csv`.
+- Each run re-scrapes the **rolling last three calendar months** and **appends** only new rows into `sold_listing_history` / `rented_listing_history` (skips `(mls_id, event_date, status)` already stored). Re-running the same week without upstream MLS changes should insert **zero** new history rows.
+- **`backfill-historical`** still uses **month-window replace** semantics (`memorialize_history_window`) for bulk older fills.
+- `sold_analytics_snapshot` after `load-db` matches the latest `sold_clean_latest.csv` for that rolling window.
 
 ## Manual `load-db`
 

@@ -96,7 +96,7 @@ Only when you are ready for long runs:
   - `python3 pipeline.py monthly`
 - Monthly historical pipeline including scraping:
   - `python3 pipeline.py monthly --with-scrape`
-- Weekly sold/rented MLS refresh with memorialization policy:
+- Weekly sold/rented MLS refresh (rolling last 3 calendar months; append new history rows):
   - `python3 pipeline.py weekly-sold-rented --headless`
 - One-time historical backfill (default 5 years, month-by-month):
   - `python3 pipeline.py backfill-historical --years 5 --headless --resume`
@@ -163,7 +163,7 @@ Geography note: MLS coverage is mostly implicit to the logged-in MLS account and
   - `cleaned/*.csv`
   - `analytics/*.csv`
 - Historical snapshots:
-  - Monthly sold/rented: `history/monthly/data-YYYY-MM/` after each memorialized month; weekly finish also writes `data-YYYY-MM-rolling/` for the hot-window refresh. Ad-hoc monthly runs use `data-YYYY-MM-monthly-run/`.
+  - Monthly sold/rented / backfill: `history/monthly/data-YYYY-MM/` per memorialized month. Weekly runs write `history/monthly/data-YYYY-MM-DD-rolling/`. Ad-hoc monthly runs use `data-YYYY-MM-monthly-run/`.
   - Daily active: `history/daily_active/YYYY-MM-DD/`
 
 ## API Endpoints (v1)
@@ -250,7 +250,7 @@ Default scheduled jobs in the template:
 
 - daily active scrape at 2:15am:
   - `daily-active --with-scrape --headless`
-- weekly sold/rented scrape and memorialization every Sunday at 3:30am:
+- weekly sold/rented scrape (rolling 3-month window + history append) every Sunday at 3:30am:
   - `weekly-sold-rented --headless`
 
 Note: `daily-active` now includes DB loading by default, so a separate scheduled `load-db` for active freshness is not required.
@@ -263,17 +263,14 @@ Hosted recommendation:
 - Setup guide: [docs/hosted_scheduler_vm.md](docs/hosted_scheduler_vm.md)
 - Scraping vs cron vs `/ops` metrics (read this on every prod setup): [docs/mls_scraping_and_ops_alignment.md](docs/mls_scraping_and_ops_alignment.md)
 
-Memorialization policy:
+Weekly sold/rented policy:
 
-- Each weekly run computes:
-  - `memorialize_through = end_of_month(first_day_of_current_month - 3 months)`
-- Closed months at or before that cutoff are memorialized to historical DB tables.
-- Current analytics window is re-scraped from `memorialize_through + 1 day` through today.
+- Raw MLS sold/rent export CSVs under `downloads/` are cleared before each scrape (when scraping is on).
+- MLS Off-Market Timeframe is **today minus three calendar months** through **today** (inclusive).
+- `sold_analytics_snapshot` is replaced from the latest cleaned sold file (that rolling window).
+- `sold_listing_history` / `rented_listing_history` grow over time: each run **inserts only** rows whose `(mls_id, event_date, status)` are not already present.
 
-Example:
-
-- On `2026-04-29`, memorialize through `2025-12-31`.
-- Re-scrape hot window from `2026-01-01` through current date.
+One-time **`backfill-historical`** still uses month windows and **replace** semantics per window (for corrections). Use that when you need to bulk-fill older history.
 
 ## Notes
 

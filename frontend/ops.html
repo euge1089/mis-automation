@@ -10,21 +10,24 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/ops.css?v=4" />
+    <link rel="stylesheet" href="/static/ops.css?v=5" />
   </head>
   <body>
     <header class="ops-header">
-      <div>
-        <p class="ops-eyebrow">Internal</p>
-        <h1>Pipeline &amp; data health</h1>
-        <p class="ops-lede">
-          This page explains what each scheduled job does, how the last run went, and which automatic
-          checks are in place. Times are US Eastern. <a href="/">← Back to app</a>
-        </p>
+      <div class="ops-header-inner">
+        <div>
+          <p class="ops-eyebrow">Internal</p>
+          <h1>Pipeline &amp; data health</h1>
+          <p class="ops-lede">
+            Scheduled jobs, last run status, and checks in one place. Times are US Eastern.
+            <a href="/">← Back to app</a>
+          </p>
+        </div>
+        <button type="button" id="refreshBtn" class="ops-btn">Refresh</button>
       </div>
-      <button type="button" id="refreshBtn" class="ops-btn">Refresh</button>
     </header>
 
+    <main class="ops-shell">
     <section class="ops-panel ops-guide">
       <h2 title="Read top to bottom: health, then alerts, then detail">Quick guide</h2>
       <ul class="ops-guide-list">
@@ -169,7 +172,8 @@
         <pre id="logModalBody" class="run-pre log-modal-pre"></pre>
       </div>
     </dialog>
+    </main>
 
-    <script src="/static/ops.js?v=4"></script>
+    <script src="/static/ops.js?v=5"></script>
   </body>
 </html>

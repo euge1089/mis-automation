@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from datetime import date, datetime, timezone
 import pandas as pd
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from backend.db import Base, SessionLocal, engine
 from backend.models import (
@@ -290,6 +290,157 @@ def _load_cleaned_for_history(dataset: str) -> pd.DataFrame:
     if not file_path.exists():
         raise FileNotFoundError(f"Missing cleaned file for memorialization: {file_path}")
     return pd.read_csv(file_path, low_memory=False)
+
+
+def _history_identity_key(mls_id: str, event_date: date, status: str | None) -> tuple:
+    return (str(mls_id).strip(), event_date, status)
+
+
+def append_history_window(
+    session,
+    *,
+    window_start: date,
+    window_end: date,
+    as_of: datetime | None = None,
+) -> tuple[int, int]:
+    """
+    Insert sold/rented rows from cleaned CSVs whose event_date falls in ``window_*``.
+
+    Skips rows whose ``(mls_id, event_date, status)`` already exists in the database so weekly
+    re-scrapes of the same rolling window accumulate an inception-to-date history without duplicates.
+    """
+    if window_end < window_start:
+        raise ValueError("window_end must be >= window_start")
+
+    memorialized_at = as_of or datetime.now(timezone.utc)
+
+    sold_df = _load_cleaned_for_history("sold")
+    sold_df["event_date"] = _coerce_event_date(sold_df, dataset="sold")
+    sold_df = sold_df[
+        sold_df["event_date"].notna()
+        & (sold_df["event_date"] >= window_start)
+        & (sold_df["event_date"] <= window_end)
+    ].copy()
+
+    rentals_df = _load_cleaned_for_history("rentals")
+    rentals_df["event_date"] = _coerce_event_date(rentals_df, dataset="rentals")
+    rentals_df = rentals_df[
+        rentals_df["event_date"].notna()
+        & (rentals_df["event_date"] >= window_start)
+        & (rentals_df["event_date"] <= window_end)
+    ].copy()
+
+    sold_mls_ids = sorted(
+        {str(x).strip() for x in sold_df["mls_id"].dropna().unique() if str(x).strip()}
+    )
+    sold_existing: set[tuple] = set()
+    if sold_mls_ids:
+        rows = session.execute(
+            select(
+                SoldListingHistory.mls_id,
+                SoldListingHistory.event_date,
+                SoldListingHistory.status,
+            ).where(SoldListingHistory.mls_id.in_(sold_mls_ids))
+        ).all()
+        sold_existing = {_history_identity_key(r.mls_id, r.event_date, r.status) for r in rows}
+
+    rented_mls_ids = sorted(
+        {str(x).strip() for x in rentals_df["mls_id"].dropna().unique() if str(x).strip()}
+    )
+    rented_existing: set[tuple] = set()
+    if rented_mls_ids:
+        rows = session.execute(
+            select(
+                RentedListingHistory.mls_id,
+                RentedListingHistory.event_date,
+                RentedListingHistory.status,
+            ).where(RentedListingHistory.mls_id.in_(rented_mls_ids))
+        ).all()
+        rented_existing = {_history_identity_key(r.mls_id, r.event_date, r.status) for r in rows}
+
+    sold_rows = []
+    sold_seen_batch: set[tuple] = set()
+    for _, row in sold_df.iterrows():
+        event_date = row.get("event_date")
+        mls_id = row.get("mls_id")
+        if event_date is None or pd.isna(event_date) or pd.isna(mls_id):
+            continue
+        mls_s = str(mls_id).strip()
+        if not mls_s:
+            continue
+        st = _null_if_nan(row.get("status"))
+        key = _history_identity_key(mls_s, event_date, st)
+        if key in sold_existing or key in sold_seen_batch:
+            continue
+        sold_seen_batch.add(key)
+        payload = {
+            col: _to_python_scalar(val)
+            for col, val in row.items()
+            if col != "event_date"
+        }
+        sold_rows.append(
+            SoldListingHistory(
+                mls_id=mls_s,
+                event_date=event_date,
+                status=st,
+                property_type=_null_if_nan(row.get("property_type_clean") or row.get("property_type")),
+                town=_null_if_nan(row.get("town")),
+                zip_code=_normalize_zip_cell(row.get("zip_code")),
+                sale_price=_null_if_nan(row.get("sale_price")),
+                bedrooms=_null_if_nan(row.get("bedrooms")),
+                total_baths=_null_if_nan(row.get("total_baths")),
+                square_feet=_null_if_nan(row.get("square_feet")),
+                source_window_start=window_start,
+                source_window_end=window_end,
+                memorialized_at=memorialized_at,
+                payload_json=json.dumps(payload, default=str),
+            )
+        )
+
+    rented_rows = []
+    rented_seen_batch: set[tuple] = set()
+    for _, row in rentals_df.iterrows():
+        event_date = row.get("event_date")
+        mls_id = row.get("mls_id")
+        if event_date is None or pd.isna(event_date) or pd.isna(mls_id):
+            continue
+        mls_s = str(mls_id).strip()
+        if not mls_s:
+            continue
+        st = _null_if_nan(row.get("status"))
+        key = _history_identity_key(mls_s, event_date, st)
+        if key in rented_existing or key in rented_seen_batch:
+            continue
+        rented_seen_batch.add(key)
+        payload = {
+            col: _to_python_scalar(val)
+            for col, val in row.items()
+            if col != "event_date"
+        }
+        rented_rows.append(
+            RentedListingHistory(
+                mls_id=mls_s,
+                event_date=event_date,
+                status=st,
+                property_type=_null_if_nan(row.get("property_type_clean") or row.get("property_type")),
+                town=_null_if_nan(row.get("town")),
+                zip_code=_normalize_zip_cell(row.get("zip_code")),
+                rent_price=_null_if_nan(row.get("rent_price") or row.get("list_price")),
+                bedrooms=_null_if_nan(row.get("bedrooms")),
+                total_baths=_null_if_nan(row.get("total_baths")),
+                square_feet=_null_if_nan(row.get("square_feet")),
+                source_window_start=window_start,
+                source_window_end=window_end,
+                memorialized_at=memorialized_at,
+                payload_json=json.dumps(payload, default=str),
+            )
+        )
+
+    if sold_rows:
+        session.bulk_save_objects(sold_rows)
+    if rented_rows:
+        session.bulk_save_objects(rented_rows)
+    return len(sold_rows), len(rented_rows)
 
 
 def memorialize_history_window(

@@ -53,6 +53,4 @@ Geography note: MLS coverage is driven by account/search access in PINergy.
 - MLS export cap can interrupt long runs; use resume-friendly ranges and stagger workloads.
 - Scheduled hosted runs should use non-interactive mode (default) and usually `--headless`.
 - `pipeline.py backfill-historical` handles one-time 5-year monthly backfill with checkpoints.
-- `pipeline.py weekly-sold-rented` applies rolling policy:
-  - memorialize closed months through the 3-month lag cutoff
-  - refresh hot window (cutoff+1 day through today)
+- `pipeline.py weekly-sold-rented` scrapes a **rolling last three calendar months** (Off-Market Timeframe), clears prior raw sold/rent CSVs when scraping, and **appends** new rows into history tables (skips existing ``(mls_id, event_date, status)``). Use `backfill-historical` for month-by-month older fills.

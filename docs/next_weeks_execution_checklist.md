@@ -72,7 +72,7 @@ Validation checks:
 
 ### 1.3 Idempotency and rerun confidence
 - [ ] Verify rerunning `daily-active` twice in a row does not create duplicate active records **(operator / staging)**.
-- [ ] Verify rerunning `weekly-sold-rented` memorialization does not duplicate historical windows **(operator / staging)**.
+- [ ] Verify rerunning `weekly-sold-rented` does not duplicate rows in sold/rent history **(operator / staging)**.
 - [x] Document rerun procedure in [rerun_playbook.md](rerun_playbook.md).
 
 Validation checks:

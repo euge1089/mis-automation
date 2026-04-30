@@ -32,9 +32,10 @@ JOB_HELP: dict[str, JobHelp] = {
         title="Weekly sold & rented refresh",
         one_liner="Keeps sold/rent history current and loads analytics into the database.",
         what_it_does=(
-            "Memorializes older closed months into long-term history in Postgres, then refreshes the "
-            "'hot' date window for recent sold/rentals, rebuilds rent-by-ZIP models, validates outputs, "
-            "loads tables into the database, and saves a snapshot."
+            "Clears prior raw sold/rent CSV downloads (when scraping), pulls MLS for the rolling last "
+            "three calendar months, rebuilds rent-by-ZIP models, validates outputs, appends only "
+            "new sold/rent rows into long-term history tables, loads analytics into the database, "
+            "and saves a snapshot."
         ),
         success_means=(
             "Sold and rental cleaned files have many rows; rent models have enough ZIP buckets; "

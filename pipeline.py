@@ -17,19 +17,17 @@ from storage_paths import clear_active_raw_downloads, clear_sold_and_rental_raw_
 from historical_policy import (
     DateWindow,
     backfill_window,
-    hot_window,
     iter_month_windows,
-    memorialize_through,
+    rolling_three_month_window,
     to_mls_timeframe,
 )
-from load_to_db import memorialize_history_window
+from load_to_db import append_history_window, memorialize_history_window
 from backend.db import Base, SessionLocal, engine
 
 
 PROJECT_DIR = Path(__file__).parent
 CHECKPOINT_DIR = PROJECT_DIR / "history" / "checkpoints"
 BACKFILL_CHECKPOINT = CHECKPOINT_DIR / "backfill_historical.json"
-MEMORIALIZATION_STATE = CHECKPOINT_DIR / "memorialization_state.json"
 
 
 def _run_script(script_name: str, args: list[str] | None = None, *, role: str = "Running") -> None:
@@ -215,42 +213,31 @@ def run_weekly_sold_rented(
     headless: bool,
 ) -> None:
     print("=== WEEKLY SOLD/RENTED START ===")
-    cutoff = memorialize_through()
-    state = _load_json(MEMORIALIZATION_STATE)
-    last_end_str = state.get("last_memorialized_through")
-    if last_end_str:
-        start = date.fromisoformat(last_end_str) + date.resolution
-    else:
-        # If never memorialized, start from first month in 5-year span.
-        start = backfill_window(years=5).start
-    if start <= cutoff:
-        for window in iter_month_windows(start, cutoff):
-            print(f"Memorialization catch-up window: {window.start}..{window.end}")
-            _run_sold_rented_scrape_for_window(
-                window=window,
-                run_scrapers=run_scrapers,
-                headless=headless,
-            )
-            _memorialize_window(window)
-            create_monthly_snapshot(folder_name=f"data-{window.end:%Y-%m}")
-            _save_json(
-                MEMORIALIZATION_STATE,
-                {
-                    "last_memorialized_through": window.end.isoformat(),
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                },
-            )
-    else:
-        print(f"No new memorialization month available (current cutoff: {cutoff}).")
-
-    # Refresh rolling hot window used for current analytics.
-    hot = hot_window()
-    print(f"Refreshing hot window {hot.start}..{hot.end}")
-    _run_sold_rented_scrape_for_window(window=hot, run_scrapers=run_scrapers, headless=headless)
+    rolling = rolling_three_month_window()
+    print(
+        f"Rolling 3-month MLS window {rolling.start:%Y-%m-%d} .. {rolling.end:%Y-%m-%d} "
+        "(raw sold/rent CSV slices cleared before scrape when scraping is enabled)."
+    )
+    _run_sold_rented_scrape_for_window(
+        window=rolling, run_scrapers=run_scrapers, headless=headless
+    )
     build_rent_models()
     validate_monthly_outputs()
+
+    Base.metadata.create_all(bind=engine)
+    with SessionLocal() as session:
+        sold_new, rented_new = append_history_window(
+            session,
+            window_start=rolling.start,
+            window_end=rolling.end,
+        )
+        session.commit()
+    print(
+        f"History append (new rows only): sold={sold_new:,}, rented={rented_new:,}"
+    )
+
     _run_script("load_to_db.py", role="DB loader")
-    create_monthly_snapshot(folder_name=f"data-{hot.end:%Y-%m}-rolling")
+    create_monthly_snapshot(folder_name=f"data-{rolling.end:%Y-%m-%d}-rolling")
     print("=== WEEKLY SOLD/RENTED COMPLETE ===")
 
 
@@ -304,7 +291,7 @@ def main() -> None:
 
     weekly = subparsers.add_parser(
         "weekly-sold-rented",
-        help="Weekly MLS sold/rented refresh with memorialization cutoff policy",
+        help="Weekly MLS sold/rented: scrape rolling last 3 calendar months, append new history rows",
     )
     weekly.add_argument(
         "--no-scrape",

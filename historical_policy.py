@@ -57,6 +57,32 @@ def hot_window(as_of: date | datetime | None = None) -> DateWindow:
     return DateWindow(start=cutoff + timedelta(days=1), end=today)
 
 
+def subtract_calendar_months(d: date, months: int) -> date:
+    """Subtract whole calendar months from ``d``, clamping the day to the target month's last day."""
+    year = d.year
+    month = d.month - months
+    while month <= 0:
+        month += 12
+        year -= 1
+    while month > 12:
+        month -= 12
+        year += 1
+    anchor = date(year, month, 1)
+    last = month_end(anchor)
+    return date(year, month, min(d.day, last.day))
+
+
+def rolling_three_month_window(as_of: date | datetime | None = None) -> DateWindow:
+    """
+    Weekly sold/rented scrape window: from (today minus 3 calendar months) through today, inclusive.
+
+    This is what we pass to MLS Off-Market Timeframe for a rolling ~three-month pull.
+    """
+    today = _as_date(as_of)
+    start = subtract_calendar_months(today, 3)
+    return DateWindow(start=start, end=today)
+
+
 def backfill_window(
     years: int = 5,
     as_of: date | datetime | None = None,
