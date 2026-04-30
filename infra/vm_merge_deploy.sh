@@ -19,7 +19,12 @@ if [[ ! -d "${DEPLOY}" ]]; then
   echo "Missing ${DEPLOY}. From your computer run rsync to this folder first." >&2
   exit 1
 fi
-sudo rsync -a "${DEPLOY}/" "${DEST}/"
+# Never sync a laptop/deploy `.venv` over `/opt`: production keeps its own venv + pip upgrades below.
+# (A symlink like `.venv -> /opt/.../venv` from tests causes "could not make way for new symlink".)
+sudo rsync -a \
+  --exclude '.venv' \
+  --exclude '.env' \
+  "${DEPLOY}/" "${DEST}/"
 sudo chown -R mlsops:mlsops "${DEST}"
 cd "${DEST}"
 ./.venv/bin/pip install -r requirements.txt -q
