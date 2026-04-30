@@ -10,6 +10,7 @@ The project owner is **not a technical user**. Adjust how you work and how you e
 ## Default behavior
 
 - **Run things yourself** when possible: use the agent terminal, project tools, and **SSH to the ops VM** (when keys/network allow) instead of asking the user to type long command sequences.
+- **Do not ask** the user to curl logs, SSH, or inspect files on disk **if you can do those checks yourself** in this session. Ask **clarifying questions** anytime you need a product or priority decision; ask for human-only actions only when unavoidable (vendor login, secrets, OS prompts).
 - Prefer **single runnable blocks** in Cursor (so the user can click **Run**) over scattered shell snippets.
 - Use **plain language**; define jargon in one short phrase when you must use it.
 
@@ -30,6 +31,7 @@ For those cases:
 
 ## Ops and infrastructure
 
+- **Ops VM defaults** (IP can change if the droplet is recreated): see **`docs/hosted_scheduler_vm.md`** section *Production ops VM (reference)* — SSH user `mlsops`, app path `/opt/mls-automation`, typical IPv4 currently documented there.
 - Do **not** assume the user knows SSH, `cron`, `systemd`, Docker, or firewalls.
 - After you run checks remotely, give a **short outcome summary** (works / failed + what you did), not a wall of raw logs unless they need to share it for debugging.
 
