@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import and_, case, desc, func, select, text
+from sqlalchemy import and_, case, desc, func, inspect, select, text
 from sqlalchemy.orm import Session
 
 import pandas as pd
@@ -144,8 +144,16 @@ def require_ops_auth(request: Request) -> None:
 
 @app.on_event("startup")
 def startup() -> None:
-    Base.metadata.create_all(bind=engine)
-    # create_all does not add new columns on existing Postgres tables
+    # Create only tables that are missing. Blind create_all() can hit rare Postgres
+    # catalog edge cases if the DB already has application tables from prior runs.
+    insp = inspect(engine)
+    for table in Base.metadata.sorted_tables:
+        schema = table.schema
+        if insp.has_table(table.name, schema=schema):
+            continue
+        table.create(bind=engine)
+
+    # Table creates above do not add new columns on existing Postgres tables
     with engine.begin() as conn:
         if conn.dialect.name == "postgresql":
             conn.execute(

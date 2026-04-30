@@ -28,8 +28,9 @@ sudo rsync -a \
 sudo chown -R mlsops:mlsops "${DEST}"
 cd "${DEST}"
 ./.venv/bin/pip install -r requirements.txt -q
-# Headless scrape jobs need Chromium on this Playwright version (paths under ~/.cache/ms-playwright/).
-./.venv/bin/python -m playwright install chromium
+# Headless cron jobs run as `mlsops`; browsers must live under /home/mlsops/.cache/ms-playwright/
+# (running install as root only populated /root/.cache and broke scrapes).
+sudo -u mlsops -H bash -c 'cd /opt/mls-automation && ./.venv/bin/python -m playwright install chromium'
 sudo systemctl restart mls-api.service
 echo "---"
 curl -s -S http://127.0.0.1:8000/health || true
