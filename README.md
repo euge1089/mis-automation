@@ -100,6 +100,8 @@ Only when you are ready for long runs:
   - `python3 pipeline.py weekly-sold-rented --headless`
 - One-time historical backfill (default 5 years, month-by-month):
   - `python3 pipeline.py backfill-historical --years 5 --headless --resume`
+- Ad hoc sold/rented window (exact timeframe; append only new history rows):
+  - `python3 pipeline.py adhoc-history-window --start 2025-01-01 --end 2025-03-31 --headless`
 - Daily active pipeline (no scrape):
   - `python3 pipeline.py daily-active`
 - Daily active pipeline including scraping:

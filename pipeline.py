@@ -80,6 +80,13 @@ def _run_sold_rented_scrape_for_window(
     )
 
 
+def _parse_iso_date(raw: str, *, arg_name: str) -> date:
+    try:
+        return date.fromisoformat(raw)
+    except ValueError as exc:  # pragma: no cover - simple argparse-like error surface
+        raise ValueError(f"{arg_name} must be YYYY-MM-DD (got {raw!r})") from exc
+
+
 def _memorialize_window(window: DateWindow) -> tuple[int, int]:
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as session:
@@ -241,6 +248,46 @@ def run_weekly_sold_rented(
     print("=== WEEKLY SOLD/RENTED COMPLETE ===")
 
 
+def run_adhoc_history_window(
+    *,
+    window: DateWindow,
+    run_scrapers: bool,
+    headless: bool,
+    run_load_db: bool,
+) -> None:
+    print("=== ADHOC HISTORY WINDOW START ===")
+    print(f"Adhoc MLS window {window.start:%Y-%m-%d} .. {window.end:%Y-%m-%d}")
+    _run_sold_rented_scrape_for_window(
+        window=window,
+        run_scrapers=run_scrapers,
+        headless=headless,
+    )
+    build_rent_models()
+    validate_monthly_outputs()
+
+    Base.metadata.create_all(bind=engine)
+    with SessionLocal() as session:
+        sold_new, rented_new = append_history_window(
+            session,
+            window_start=window.start,
+            window_end=window.end,
+        )
+        session.commit()
+    print(
+        f"History append (new rows only): sold={sold_new:,}, rented={rented_new:,}"
+    )
+
+    if run_load_db:
+        _run_script("load_to_db.py", role="DB loader")
+    else:
+        print("Skipped load_to_db.py (--no-load-db).")
+
+    create_monthly_snapshot(
+        folder_name=f"data-{window.start:%Y-%m-%d}-to-{window.end:%Y-%m-%d}-adhoc"
+    )
+    print("=== ADHOC HISTORY WINDOW COMPLETE ===")
+
+
 def _dispatch_command(args: Namespace) -> None:
     if args.command == "monthly":
         run_monthly_pipeline(run_scrapers=args.with_scrape)
@@ -255,6 +302,17 @@ def _dispatch_command(args: Namespace) -> None:
             run_scrapers=not args.no_scrape,
             headless=args.headless,
             resume=args.resume,
+        )
+    elif args.command == "adhoc-history-window":
+        start = _parse_iso_date(args.start, arg_name="--start")
+        end = _parse_iso_date(args.end, arg_name="--end")
+        if end < start:
+            raise ValueError("--end must be >= --start")
+        run_adhoc_history_window(
+            window=DateWindow(start=start, end=end),
+            run_scrapers=not args.no_scrape,
+            headless=args.headless,
+            run_load_db=not args.no_load_db,
         )
     elif args.command == "daily-active":
         run_daily_active_pipeline_with_geocode(
@@ -325,6 +383,36 @@ def main() -> None:
         help="Resume from history/checkpoints/backfill_historical.json",
     )
 
+    adhoc = subparsers.add_parser(
+        "adhoc-history-window",
+        help="Adhoc sold/rented window: scrape exact date span and append only new history rows",
+    )
+    adhoc.add_argument(
+        "--start",
+        required=True,
+        help="Window start date (YYYY-MM-DD) for MLS Off-Market timeframe",
+    )
+    adhoc.add_argument(
+        "--end",
+        required=True,
+        help="Window end date (YYYY-MM-DD) for MLS Off-Market timeframe",
+    )
+    adhoc.add_argument(
+        "--no-scrape",
+        action="store_true",
+        help="Skip MLS scraping and process existing sold/rent exports already on disk.",
+    )
+    adhoc.add_argument(
+        "--headless",
+        action="store_true",
+        help="Pass --headless to scraping scripts.",
+    )
+    adhoc.add_argument(
+        "--no-load-db",
+        action="store_true",
+        help="Skip load_to_db.py (history append still runs).",
+    )
+
     daily = subparsers.add_parser(
         "daily-active", help="Run daily active listings pipeline"
     )
@@ -376,6 +464,13 @@ def main() -> None:
     if args.command == "weekly-sold-rented" and args.no_scrape:
         print(
             "WARNING: weekly-sold-rented is running WITH --no-scrape. "
+            "MLS sold/rent downloads are skipped; existing exports on disk are processed only.",
+            file=sys.stderr,
+            flush=True,
+        )
+    if args.command == "adhoc-history-window" and args.no_scrape:
+        print(
+            "WARNING: adhoc-history-window is running WITH --no-scrape. "
             "MLS sold/rent downloads are skipped; existing exports on disk are processed only.",
             file=sys.stderr,
             flush=True,
