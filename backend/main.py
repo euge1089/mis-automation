@@ -4,6 +4,7 @@ import os
 import secrets
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from collections import Counter
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
@@ -42,6 +43,7 @@ from backend.schemas import (
     OpsAlertsBundleOut,
     OpsBackupStatusOut,
     OpsDiskOut,
+    OpsHistoryMonthlyCountsOut,
     OpsLogExcerptOut,
     OpsLastSuccessOut,
     OpsOverviewOut,
@@ -85,6 +87,19 @@ def _run_by_id(db: Session, run_id: int | None) -> PipelineRun | None:
     if run_id is None:
         return None
     return db.execute(select(PipelineRun).where(PipelineRun.id == run_id)).scalars().first()
+
+
+def _monthly_counts_for_history(db: Session, model) -> list[dict[str, int | str]]:
+    rows = db.execute(select(model.event_date).where(model.event_date.isnot(None))).all()
+    counter: Counter[str] = Counter()
+    for (d,) in rows:
+        if d is None:
+            continue
+        counter[f"{d.year:04d}-{d.month:02d}"] += 1
+    return [
+        {"month": month, "count": count}
+        for month, count in sorted(counter.items(), key=lambda kv: kv[0])
+    ]
 
 
 def _load_sold_df(db: Session) -> pd.DataFrame:
@@ -275,6 +290,18 @@ def ops_overview(db: Session = Depends(get_db)) -> OpsOverviewOut:
         active_listings_freshness=freshness,
         extended_host_metrics=ext,
     )
+
+
+@app.get(
+    "/ops/history-monthly-counts",
+    response_model=OpsHistoryMonthlyCountsOut,
+    dependencies=[Depends(require_ops_auth)],
+)
+def ops_history_monthly_counts(db: Session = Depends(get_db)) -> OpsHistoryMonthlyCountsOut:
+    """Monthly listing counts from historical sold/rented tables, grouped by event_date month."""
+    sold = _monthly_counts_for_history(db, SoldListingHistory)
+    rented = _monthly_counts_for_history(db, RentedListingHistory)
+    return OpsHistoryMonthlyCountsOut(sold=sold, rented=rented)
 
 
 @app.get("/ops/disk", response_model=OpsDiskOut, dependencies=[Depends(require_ops_auth)])

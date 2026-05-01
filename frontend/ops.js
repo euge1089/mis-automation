@@ -35,6 +35,105 @@ function truncateErr(s, maxLen) {
   return s.slice(0, maxLen) + "…";
 }
 
+let historyCountsCache = { sold: [], rented: [] };
+
+function svgEl(tag, attrs = {}) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    el.setAttribute(k, String(v));
+  }
+  return el;
+}
+
+function historyWindowRows(rows) {
+  const sel = document.getElementById("historyMonthsWindow");
+  const val = sel ? sel.value : "24";
+  if (val === "all") return rows;
+  const n = parseInt(val, 10);
+  if (!Number.isFinite(n) || n <= 0) return rows;
+  return rows.slice(-n);
+}
+
+function drawHistoryChart(svgId, hoverId, rows) {
+  const svg = document.getElementById(svgId);
+  const hover = document.getElementById(hoverId);
+  if (!svg || !hover) return;
+  svg.innerHTML = "";
+  hover.textContent = "";
+
+  const viewBox = (svg.getAttribute("viewBox") || "0 0 520 220").split(/\s+/).map(Number);
+  const width = viewBox[2] || 520;
+  const height = viewBox[3] || 220;
+  const margin = { top: 10, right: 10, bottom: 28, left: 36 };
+  const plotW = width - margin.left - margin.right;
+  const plotH = height - margin.top - margin.bottom;
+
+  const data = historyWindowRows(rows || []);
+  if (!data.length) {
+    const t = svgEl("text", { x: width / 2, y: height / 2, "text-anchor": "middle", class: "history-tick-label" });
+    t.textContent = "No history rows yet";
+    svg.appendChild(t);
+    return;
+  }
+
+  const maxCount = Math.max(...data.map((d) => d.count || 0), 1);
+  const barW = plotW / data.length;
+
+  svg.appendChild(svgEl("line", { x1: margin.left, y1: margin.top + plotH, x2: margin.left + plotW, y2: margin.top + plotH, class: "history-axis" }));
+  svg.appendChild(svgEl("line", { x1: margin.left, y1: margin.top, x2: margin.left, y2: margin.top + plotH, class: "history-axis" }));
+
+  const tickEvery = Math.max(1, Math.ceil(data.length / 6));
+  data.forEach((d, i) => {
+    const count = d.count || 0;
+    const h = (count / maxCount) * plotH;
+    const x = margin.left + i * barW + 1;
+    const y = margin.top + plotH - h;
+    const w = Math.max(1.5, barW - 2);
+    const rect = svgEl("rect", { x, y, width: w, height: Math.max(1, h), class: "history-bar" });
+    rect.addEventListener("mouseenter", () => {
+      hover.textContent = `${d.month}: ${count.toLocaleString()} listing(s)`;
+    });
+    rect.appendChild(svgEl("title"));
+    rect.lastChild.textContent = `${d.month}: ${count.toLocaleString()}`;
+    svg.appendChild(rect);
+
+    if (i % tickEvery === 0 || i === data.length - 1) {
+      const label = svgEl("text", {
+        x: x + w / 2,
+        y: margin.top + plotH + 12,
+        "text-anchor": "middle",
+        class: "history-tick-label",
+      });
+      label.textContent = d.month.slice(2);
+      svg.appendChild(label);
+    }
+  });
+}
+
+function renderHistoryCharts() {
+  drawHistoryChart("soldMonthlyChart", "soldChartHover", historyCountsCache.sold);
+  drawHistoryChart("rentedMonthlyChart", "rentedChartHover", historyCountsCache.rented);
+}
+
+async function loadHistoryMonthlyCounts() {
+  const statusEl = document.getElementById("historyCountsStatus");
+  if (!statusEl) return;
+  statusEl.textContent = "Loading…";
+  try {
+    const r = await fetch("/ops/history-monthly-counts");
+    if (!r.ok) throw new Error(r.statusText);
+    const payload = await r.json();
+    historyCountsCache = {
+      sold: Array.isArray(payload.sold) ? payload.sold : [],
+      rented: Array.isArray(payload.rented) ? payload.rented : [],
+    };
+    statusEl.textContent = "";
+    renderHistoryCharts();
+  } catch (e) {
+    statusEl.textContent = "Could not load monthly history charts: " + e.message;
+  }
+}
+
 async function loadAlerts() {
   const statusEl = document.getElementById("alertsStatus");
   const body = document.getElementById("alertsBody");
@@ -424,6 +523,7 @@ async function loadRuns() {
 async function refresh() {
   await Promise.all([
     loadOverview(),
+    loadHistoryMonthlyCounts(),
     loadDisk(),
     loadBackup(),
     loadAlerts(),
@@ -453,6 +553,11 @@ document.getElementById("runsStatusFilter").addEventListener("change", () => {
 document.getElementById("runsSortSelect").addEventListener("change", () => {
   loadRuns();
 });
+
+const historySel = document.getElementById("historyMonthsWindow");
+if (historySel) {
+  historySel.addEventListener("change", () => renderHistoryCharts());
+}
 
 document.getElementById("logModalClose").addEventListener("click", () => {
   const modal = document.getElementById("logModal");

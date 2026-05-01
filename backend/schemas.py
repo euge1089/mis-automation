@@ -200,6 +200,16 @@ class OpsOverviewOut(BaseModel):
     extended_host_metrics: dict[str, str] | None = None
 
 
+class OpsMonthlyCountPointOut(BaseModel):
+    month: str
+    count: int
+
+
+class OpsHistoryMonthlyCountsOut(BaseModel):
+    sold: list[OpsMonthlyCountPointOut]
+    rented: list[OpsMonthlyCountPointOut]
+
+
 class OpsDiskOut(BaseModel):
     project_path: str
     filesystem_total_bytes: int

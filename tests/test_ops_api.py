@@ -77,6 +77,16 @@ def test_ops_runs_filters_ok(client: TestClient) -> None:
     assert isinstance(r.json(), list)
 
 
+def test_ops_history_monthly_counts_shape(client: TestClient) -> None:
+    r = client.get("/ops/history-monthly-counts")
+    assert r.status_code == 200
+    j = r.json()
+    assert "sold" in j
+    assert "rented" in j
+    assert isinstance(j["sold"], list)
+    assert isinstance(j["rented"], list)
+
+
 def test_ops_log_excerpt_missing_run(client: TestClient) -> None:
     r = client.get("/ops/runs/999999/log-excerpt")
     assert r.status_code == 404

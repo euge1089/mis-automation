@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/ops.css?v=5" />
+    <link rel="stylesheet" href="/static/ops.css?v=6" />
   </head>
   <body>
     <header class="ops-header">
@@ -51,6 +51,35 @@
       <p id="overviewStatus" class="ops-muted"></p>
       <div id="overviewStrip" class="overview-strip"></div>
       <div id="overviewFreshness" class="overview-fresh-wrap"></div>
+    </section>
+
+    <section class="ops-panel">
+      <h2>Historical listings by month</h2>
+      <p class="ops-muted">Counts are grouped by sold/rented event month from database history tables.</p>
+      <div class="runs-toolbar">
+        <label>
+          Show months
+          <select id="historyMonthsWindow">
+            <option value="12">Last 12</option>
+            <option value="24" selected>Last 24</option>
+            <option value="36">Last 36</option>
+            <option value="all">All</option>
+          </select>
+        </label>
+      </div>
+      <p id="historyCountsStatus" class="ops-muted"></p>
+      <div class="ops-two-col">
+        <div class="chart-card">
+          <p class="chart-title">Sold listings saved</p>
+          <svg id="soldMonthlyChart" class="history-chart" viewBox="0 0 520 220" role="img" aria-label="Sold history by month"></svg>
+          <p id="soldChartHover" class="ops-muted small"></p>
+        </div>
+        <div class="chart-card">
+          <p class="chart-title">Rented listings saved</p>
+          <svg id="rentedMonthlyChart" class="history-chart" viewBox="0 0 520 220" role="img" aria-label="Rented history by month"></svg>
+          <p id="rentedChartHover" class="ops-muted small"></p>
+        </div>
+      </div>
     </section>
 
     <section class="ops-panel ops-two-col">
@@ -174,6 +203,6 @@
     </dialog>
     </main>
 
-    <script src="/static/ops.js?v=5"></script>
+    <script src="/static/ops.js?v=6"></script>
   </body>
 </html>

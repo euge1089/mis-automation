@@ -630,6 +630,47 @@ tbody tr:hover td {
   font-size: var(--text-sm);
 }
 
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.7rem 0.8rem;
+}
+
+.chart-title {
+  margin: 0 0 0.35rem;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.history-chart {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #0b0f16;
+}
+
+.history-axis {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+
+.history-bar {
+  fill: rgba(110, 182, 240, 0.72);
+  transition: fill 0.12s ease;
+}
+
+.history-bar:hover {
+  fill: rgba(110, 182, 240, 0.95);
+}
+
+.history-tick-label {
+  fill: var(--muted);
+  font-size: 9px;
+}
+
 /* Disk / backup row */
 .ops-two-col {
   display: grid;
