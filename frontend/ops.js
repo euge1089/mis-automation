@@ -54,6 +54,24 @@ function historyWindowRows(rows) {
   return rows.slice(-n);
 }
 
+function compactInt(n) {
+  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n || 0);
+}
+
+function formatMonthLabel(yyyyMm, { shortYear = false } = {}) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(yyyyMm || ""));
+  if (!m) return String(yyyyMm || "");
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    return String(yyyyMm || "");
+  }
+  const d = new Date(Date.UTC(year, month - 1, 1));
+  const monthName = d.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+  const yearPart = shortYear ? String(year).slice(-2) : String(year);
+  return `${monthName} ${yearPart}`;
+}
+
 function drawHistoryChart(svgId, hoverId, rows) {
   const svg = document.getElementById(svgId);
   const hover = document.getElementById(hoverId);
@@ -61,14 +79,19 @@ function drawHistoryChart(svgId, hoverId, rows) {
   svg.innerHTML = "";
   hover.textContent = "";
 
-  const viewBox = (svg.getAttribute("viewBox") || "0 0 520 220").split(/\s+/).map(Number);
-  const width = viewBox[2] || 520;
-  const height = viewBox[3] || 220;
-  const margin = { top: 10, right: 10, bottom: 28, left: 36 };
+  const data = historyWindowRows(rows || []);
+  const baseHeight = 340;
+  const minWidth = 900;
+  const pxPerBar = 42;
+  const width = Math.max(minWidth, data.length * pxPerBar + 90);
+  const height = baseHeight;
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.style.width = `${width}px`;
+
+  const margin = { top: 18, right: 12, bottom: 34, left: 44 };
   const plotW = width - margin.left - margin.right;
   const plotH = height - margin.top - margin.bottom;
 
-  const data = historyWindowRows(rows || []);
   if (!data.length) {
     const t = svgEl("text", { x: width / 2, y: height / 2, "text-anchor": "middle", class: "history-tick-label" });
     t.textContent = "No history rows yet";
@@ -77,12 +100,28 @@ function drawHistoryChart(svgId, hoverId, rows) {
   }
 
   const maxCount = Math.max(...data.map((d) => d.count || 0), 1);
-  const barW = plotW / data.length;
+  const yTicks = 4;
+
+  for (let i = 0; i <= yTicks; i += 1) {
+    const ratio = i / yTicks;
+    const y = margin.top + plotH - ratio * plotH;
+    const tickVal = Math.round(maxCount * ratio);
+    svg.appendChild(svgEl("line", { x1: margin.left, y1: y, x2: margin.left + plotW, y2: y, class: "history-grid" }));
+    const tickLabel = svgEl("text", {
+      x: margin.left - 6,
+      y: y + 3,
+      "text-anchor": "end",
+      class: "history-tick-label",
+    });
+    tickLabel.textContent = compactInt(tickVal);
+    svg.appendChild(tickLabel);
+  }
+
+  const barW = Math.max(10, plotW / data.length);
 
   svg.appendChild(svgEl("line", { x1: margin.left, y1: margin.top + plotH, x2: margin.left + plotW, y2: margin.top + plotH, class: "history-axis" }));
   svg.appendChild(svgEl("line", { x1: margin.left, y1: margin.top, x2: margin.left, y2: margin.top + plotH, class: "history-axis" }));
 
-  const tickEvery = Math.max(1, Math.ceil(data.length / 6));
   data.forEach((d, i) => {
     const count = d.count || 0;
     const h = (count / maxCount) * plotH;
@@ -91,22 +130,37 @@ function drawHistoryChart(svgId, hoverId, rows) {
     const w = Math.max(1.5, barW - 2);
     const rect = svgEl("rect", { x, y, width: w, height: Math.max(1, h), class: "history-bar" });
     rect.addEventListener("mouseenter", () => {
-      hover.textContent = `${d.month}: ${count.toLocaleString()} listing(s)`;
+      hover.textContent = `${formatMonthLabel(d.month)}: ${count.toLocaleString()} listing(s)`;
     });
     rect.appendChild(svgEl("title"));
-    rect.lastChild.textContent = `${d.month}: ${count.toLocaleString()}`;
+    rect.lastChild.textContent = `${formatMonthLabel(d.month)}: ${count.toLocaleString()}`;
     svg.appendChild(rect);
 
-    if (i % tickEvery === 0 || i === data.length - 1) {
-      const label = svgEl("text", {
-        x: x + w / 2,
-        y: margin.top + plotH + 12,
-        "text-anchor": "middle",
-        class: "history-tick-label",
-      });
-      label.textContent = d.month.slice(2);
-      svg.appendChild(label);
+    const valLabel = svgEl("text", {
+      x: x + w / 2,
+      y: Math.max(margin.top + 8, y - 4),
+      "text-anchor": "middle",
+      class: "history-value-label",
+    });
+    valLabel.textContent = count.toLocaleString();
+    if (w < 30) {
+      valLabel.setAttribute("font-size", "7");
+      valLabel.textContent = compactInt(count);
     }
+    svg.appendChild(valLabel);
+
+    const label = svgEl("text", {
+      x: x + w / 2,
+      y: margin.top + plotH + 12,
+      "text-anchor": "middle",
+      class: "history-tick-label",
+    });
+    label.textContent = formatMonthLabel(d.month, { shortYear: data.length > 24 });
+    if (data.length > 18) {
+      label.setAttribute("transform", `rotate(-45 ${x + w / 2} ${margin.top + plotH + 12})`);
+      label.setAttribute("text-anchor", "end");
+    }
+    svg.appendChild(label);
   });
 }
 
@@ -192,19 +246,19 @@ async function loadCatalog() {
     const r = await fetch("/ops/catalog");
     if (!r.ok) throw new Error(r.statusText);
     const items = await r.json();
-    statusEl.textContent = "";
+    statusEl.textContent = items.length ? "" : "No job descriptions available.";
     for (const item of items) {
-      const card = document.createElement("article");
-      card.className = "catalog-card";
-      card.innerHTML = `
-        <p class="catalog-key"><code>${escapeHtml(item.job_key)}</code></p>
-        <h3 class="catalog-title">${escapeHtml(item.title)}</h3>
-        <p class="catalog-oneliner">${escapeHtml(item.one_liner)}</p>
-        <p><strong>What it does:</strong> ${escapeHtml(item.what_it_does)}</p>
-        <p><strong>When it succeeded:</strong> ${escapeHtml(item.success_means)}</p>
-        <p class="ops-muted small">${escapeHtml(item.schedule_hint)}</p>
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>
+          <div class="cell-title">${escapeHtml(item.title)}</div>
+          <div class="cell-meta"><code>${escapeHtml(item.job_key)}</code></div>
+        </td>
+        <td>${escapeHtml(item.what_it_does)}</td>
+        <td>${escapeHtml(item.success_means)}</td>
+        <td>${escapeHtml(item.schedule_hint)}</td>
       `;
-      body.appendChild(card);
+      body.appendChild(tr);
     }
   } catch (e) {
     statusEl.textContent = "Could not load job descriptions: " + e.message;
@@ -232,6 +286,7 @@ async function loadSummary() {
           <div class="cell-meta"><code>${escapeHtml(row.job_key)}</code></div>
         </td>
         <td>${fmtEt(row.last_success_at)}</td>
+        <td>${escapeHtml(nextScheduledRunLabel(row.job_key))}</td>
         <td class="sha">${row.run_id != null ? String(row.run_id) : "—"}</td>
       `;
       body.appendChild(tr);
@@ -239,6 +294,14 @@ async function loadSummary() {
   } catch (e) {
     el.textContent = "Could not load summary: " + e.message;
   }
+}
+
+function nextScheduledRunLabel(jobKey) {
+  const key = String(jobKey || "");
+  if (key === "daily-active") return "Daily (cron)";
+  if (key === "weekly-sold-rented") return "Weekly (cron)";
+  if (key === "monthly") return "Monthly (cron)";
+  return "—";
 }
 
 function cardLast(label, snap, hint) {

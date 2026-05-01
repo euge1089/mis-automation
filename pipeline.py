@@ -1,6 +1,7 @@
 import argparse
 from argparse import Namespace
 import json
+import os
 import subprocess
 import sys
 from datetime import date, datetime, timezone
@@ -28,6 +29,8 @@ from backend.db import Base, SessionLocal, engine
 PROJECT_DIR = Path(__file__).parent
 CHECKPOINT_DIR = PROJECT_DIR / "history" / "checkpoints"
 BACKFILL_CHECKPOINT = CHECKPOINT_DIR / "backfill_historical.json"
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+_FALSE_VALUES = {"0", "false", "no", "off"}
 
 
 def _run_script(script_name: str, args: list[str] | None = None, *, role: str = "Running") -> None:
@@ -47,6 +50,40 @@ def _load_json(path: Path) -> dict:
 def _save_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in _TRUE_VALUES:
+        return True
+    if value in _FALSE_VALUES:
+        return False
+    return default
+
+
+def _scrape_requested(args: Namespace) -> bool:
+    if args.command == "daily-active":
+        return bool(args.with_scrape)
+    if args.command == "monthly":
+        return bool(args.with_scrape)
+    if args.command in {"weekly-sold-rented", "backfill-historical", "adhoc-history-window"}:
+        return not bool(args.no_scrape)
+    return False
+
+
+def _enforce_scrape_lock(args: Namespace) -> None:
+    # Default allows scraping. Set MLS_SCRAPE_ENABLED=0 to hard-stop MLS login/download commands.
+    scrape_enabled = _env_flag("MLS_SCRAPE_ENABLED", default=True)
+    if scrape_enabled or not _scrape_requested(args):
+        return
+    raise RuntimeError(
+        "MLS scraping is disabled by MLS_SCRAPE_ENABLED=0. "
+        "This command was about to run a live MLS scrape. "
+        "Run without scrape flags (e.g. --no-scrape), or set MLS_SCRAPE_ENABLED=1 when quota resets."
+    )
 
 
 def _run_sold_rented_scrape_for_window(
@@ -243,7 +280,11 @@ def run_weekly_sold_rented(
         f"History append (new rows only): sold={sold_new:,}, rented={rented_new:,}"
     )
 
-    _run_script("load_to_db.py", role="DB loader")
+    _run_script(
+        "load_to_db.py",
+        ["--skip-active"],
+        role="DB loader (history/rent/sold analytics; keep active listings untouched)",
+    )
     create_monthly_snapshot(folder_name=f"data-{rolling.end:%Y-%m-%d}-rolling")
     print("=== WEEKLY SOLD/RENTED COMPLETE ===")
 
@@ -278,7 +319,11 @@ def run_adhoc_history_window(
     )
 
     if run_load_db:
-        _run_script("load_to_db.py", role="DB loader")
+        _run_script(
+            "load_to_db.py",
+            ["--skip-active"],
+            role="DB loader (history/rent/sold analytics; keep active listings untouched)",
+        )
     else:
         print("Skipped load_to_db.py (--no-load-db).")
 
@@ -289,6 +334,7 @@ def run_adhoc_history_window(
 
 
 def _dispatch_command(args: Namespace) -> None:
+    _enforce_scrape_lock(args)
     if args.command == "monthly":
         run_monthly_pipeline(run_scrapers=args.with_scrape)
     elif args.command == "weekly-sold-rented":

@@ -280,4 +280,7 @@ One-time **`backfill-historical`** still uses month windows and **replace** sema
 - Scrapers depend on `.env` containing:
   - `MLS_USERNAME`
   - `MLS_PASSWORD`
+- To hard-stop live MLS scraping when you hit a daily cap, set `MLS_SCRAPE_ENABLED=0` in `.env`.
+  - Any command that would scrape (`daily-active --with-scrape`, weekly/monthly default scrape modes) exits early with a clear error.
+  - Existing CSV-only runs still work (`daily-active` without `--with-scrape`, or weekly/adhoc with `--no-scrape`).
 - Daily active scraping expects active export files in `downloads/active/` if you do not use `--with-scrape`.

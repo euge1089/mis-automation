@@ -5,6 +5,7 @@ import secrets
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from collections import Counter
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
@@ -60,7 +61,6 @@ from backend.schemas import (
 from backend.zip_normalize import normalize_us_zip_5, zip_column_eq_normalized
 
 
-app = FastAPI(title="MLS Analytics API", version="0.1.0")
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = PROJECT_DIR / "frontend"
 
@@ -163,8 +163,7 @@ def require_ops_auth(request: Request) -> None:
     _require_ops_basic_auth(request)
 
 
-@app.on_event("startup")
-def startup() -> None:
+def _ensure_db_schema() -> None:
     # Create only tables that are missing. Blind create_all() can hit rare Postgres
     # catalog edge cases if the DB already has application tables from prior runs.
     insp = inspect(engine)
@@ -183,6 +182,15 @@ def startup() -> None:
             conn.execute(
                 text("ALTER TABLE active_listings ADD COLUMN IF NOT EXISTS tax_year DOUBLE PRECISION")
             )
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    _ensure_db_schema()
+    yield
+
+
+app = FastAPI(title="MLS Analytics API", version="0.1.0", lifespan=lifespan)
 
 
 if FRONTEND_DIR.exists():

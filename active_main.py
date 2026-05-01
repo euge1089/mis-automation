@@ -20,6 +20,30 @@ ADAPTIVE_MAX_STEP = 500_000
 ADAPTIVE_INITIAL_STEP = 100_000
 
 
+def _detect_mls_daily_download_cap(page) -> bool:
+    """Return True when MLS shows the explicit daily-download-limit modal/error text."""
+    phrases = (
+        "maximum of 100 downloads per day",
+        "reached the maximum of 100 downloads per day",
+        "please try again tomorrow",
+    )
+    try:
+        body_text = page.locator("body").inner_text(timeout=2000).lower()
+    except Exception:
+        body_text = ""
+    if all(p in body_text for p in ("100 downloads", "try again tomorrow")):
+        return True
+    if any(p in body_text for p in phrases):
+        return True
+
+    # Some MLS dialogs render in specific modal containers; check those too.
+    try:
+        modal_text = page.locator("#GenericModal, .modal-content").inner_text(timeout=1500).lower()
+    except Exception:
+        modal_text = ""
+    return any(p in modal_text for p in phrases)
+
+
 def click_if_visible(page, name: str, timeout: int = 2500):
     try:
         page.get_by_role("button", name=name).click(timeout=timeout)
@@ -42,6 +66,24 @@ def _check_status_checkbox(page, *candidate_names: str) -> bool:
         except Exception:
             continue
     print(f"  Warning: could not check any of: {candidate_names}")
+    return False
+
+
+def _check_filter_checkbox(page, *, label: str, candidate_names: tuple[str, ...]) -> bool:
+    """
+    Robust checkbox check with multiple possible accessible labels.
+    Returns True when a matching checkbox is checked.
+    """
+    for name in candidate_names:
+        try:
+            cb = page.get_by_role("checkbox", name=name)
+            cb.wait_for(timeout=2500)
+            cb.check(timeout=2500)
+            print(f"  {label} filter on: {name}")
+            return True
+        except Exception:
+            continue
+    print(f"  Warning: could not check {label} filter from candidates: {candidate_names}")
     return False
 
 
@@ -155,9 +197,41 @@ def set_static_filters(page):
     except Exception:
         pass
 
-    page.get_by_role("checkbox", name="Single Family Property Type").check()
-    page.get_by_role("checkbox", name="Condominium Property Type").check()
-    page.get_by_role("checkbox", name="Multi Family Property Type").check()
+    property_filters_ok = (
+        _check_filter_checkbox(
+            page,
+            label="Single Family property type",
+            candidate_names=(
+                "Single Family Property Type",
+                "Single Family",
+                "Single Family Type",
+            ),
+        )
+        and _check_filter_checkbox(
+            page,
+            label="Condominium property type",
+            candidate_names=(
+                "Condominium Property Type",
+                "Condo Property Type",
+                "Condominium",
+                "Condo",
+            ),
+        )
+        and _check_filter_checkbox(
+            page,
+            label="Multi Family property type",
+            candidate_names=(
+                "Multi Family Property Type",
+                "Multi-Family Property Type",
+                "Multi Family",
+                "Multi-Family",
+            ),
+        )
+    )
+    if not property_filters_ok:
+        raise TimeoutError(
+            "Could not enable required property-type filters on MLS Search form."
+        )
 
     select_all_statuses = page.get_by_role("checkbox", name="Select All Statuses")
     try:
@@ -205,18 +279,28 @@ def ensure_search_form_ready(page):
         pass
 
     print("Search form not ready. Returning to Search tab...")
-    close_download_modal_if_open(page)
-    try:
-        page.get_by_role("link", name="Search").click(timeout=10000)
-    except Exception:
-        page.keyboard.press("Escape")
-        time.sleep(1)
+    last_exc: Exception | None = None
+    for attempt in range(1, 4):
         close_download_modal_if_open(page)
-        page.get_by_role("link", name="Search").click(timeout=15000)
-    page.wait_for_load_state("load")
-    wait_for_page_blocker_to_clear(page, timeout=30000)
-    time.sleep(3)
-    set_static_filters(page)
+        try:
+            if attempt == 1:
+                page.get_by_role("link", name="Search").click(timeout=12000)
+            else:
+                # Fall back to the robust navigator used after login.
+                _open_search_page_after_login(page)
+            page.wait_for_load_state("load")
+            wait_for_page_blocker_to_clear(page, timeout=30000)
+            time.sleep(2)
+            set_static_filters(page)
+            return
+        except Exception as exc:
+            last_exc = exc
+            print(f"  Search form recovery attempt {attempt}/3 failed: {exc!r}")
+            page.keyboard.press("Escape")
+            time.sleep(1.2)
+    raise TimeoutError(
+        "Search form did not become ready after retries (possible MLS UI state drift)."
+    ) from last_exc
 
 
 def set_price_range(page, min_price: int, max_price: int):
@@ -280,24 +364,72 @@ def open_results(page):
 
 
 def download_current_results(page, save_path: Path):
-    select_all = page.get_by_role("checkbox", name="Select all")
-    select_all.wait_for(timeout=30000)
-    select_all.check()
-    time.sleep(2)
+    max_attempts = 3
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            print(f"Preparing result export attempt {attempt}/{max_attempts}...")
+            select_all = page.get_by_role("checkbox", name="Select all")
+            select_all.wait_for(timeout=30000)
+            select_all.check()
+            time.sleep(1.5)
 
-    page.get_by_role("button", name="Download Selected Listings").click()
-    final_download = page.get_by_role("button", name="Click to download")
-    final_download.wait_for(timeout=30000)
-    try:
-        with page.expect_download(timeout=90_000) as download_info:
-            final_download.click()
-        download = download_info.value
-    except TimeoutError:
-        print(MLS_DOWNLOAD_TIMEOUT_HINT)
-        close_download_modal_if_open(page)
-        raise
-    download.save_as(str(save_path))
-    print(f"Saved: {save_path}")
+            page.get_by_role("button", name="Download Selected Listings").click()
+            final_download = page.get_by_role("button", name="Click to download")
+            final_download.wait_for(timeout=30000)
+            with page.expect_download(timeout=90_000) as download_info:
+                final_download.click()
+            download = download_info.value
+            download.save_as(str(save_path))
+            print(f"Saved: {save_path}")
+            return
+        except TimeoutError as exc:
+            last_exc = exc
+            print(
+                f"Download attempt {attempt}/{max_attempts} timed out waiting for file event."
+            )
+            if _detect_mls_daily_download_cap(page):
+                close_download_modal_if_open(page)
+                raise RuntimeError(
+                    "MLS daily download cap reached (100/day). "
+                    "Stop retries and run again after the cap resets tomorrow."
+                ) from exc
+            # Sometimes this indicates MLS export throttling/caps, sometimes a stuck modal.
+            possible_cap = False
+            try:
+                page_text = page.locator("body").inner_text(timeout=1500).lower()
+                cap_hints = (
+                    "limit",
+                    "maximum",
+                    "downloads per day",
+                    "download limit",
+                    "too many exports",
+                )
+                possible_cap = any(h in page_text for h in cap_hints)
+            except Exception:
+                pass
+            print(MLS_DOWNLOAD_TIMEOUT_HINT)
+            if possible_cap:
+                print(
+                    "Possible MLS download cap/throttle detected from page text. "
+                    "If retries keep timing out, pause and resume later."
+                )
+            close_download_modal_if_open(page)
+            if attempt < max_attempts:
+                # Re-open results state before retry.
+                open_results(page)
+                continue
+            raise
+        except Exception as exc:
+            last_exc = exc
+            print(f"Download attempt {attempt}/{max_attempts} failed: {exc!r}")
+            close_download_modal_if_open(page)
+            if attempt < max_attempts:
+                open_results(page)
+                continue
+            raise
+    if last_exc:
+        raise last_exc
 
 
 def run_one_range(

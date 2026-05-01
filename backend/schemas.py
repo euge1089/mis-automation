@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ActiveListingOut(BaseModel):
@@ -28,8 +28,7 @@ class ActiveListingOut(BaseModel):
     neighborhood: str | None
     full_address: str | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class GeocodeBatchIn(BaseModel):
@@ -59,8 +58,7 @@ class RentByZipBedroomOut(BaseModel):
     towns_seen: str | None
     confidence: str | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RentByZipSqftOut(BaseModel):
@@ -75,8 +73,7 @@ class RentByZipSqftOut(BaseModel):
     towns_seen: str | None
     confidence: str | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SoldListingHistoryOut(BaseModel):
@@ -91,8 +88,7 @@ class SoldListingHistoryOut(BaseModel):
     total_baths: float | None
     square_feet: float | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PipelineRunOut(BaseModel):
@@ -106,8 +102,7 @@ class PipelineRunOut(BaseModel):
     git_sha: str | None = None
     detail_json: dict | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class JobCatalogItemOut(BaseModel):
@@ -256,5 +251,4 @@ class RentedListingHistoryOut(BaseModel):
     total_baths: float | None
     square_feet: float | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

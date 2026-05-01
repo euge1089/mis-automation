@@ -34,6 +34,27 @@ ADAPTIVE_MAX_STEP = 500_000
 ADAPTIVE_INITIAL_STEP = 100_000
 
 
+def _detect_mls_daily_download_cap(page) -> bool:
+    phrases = (
+        "maximum of 100 downloads per day",
+        "reached the maximum of 100 downloads per day",
+        "please try again tomorrow",
+    )
+    try:
+        body_text = page.locator("body").inner_text(timeout=2000).lower()
+    except Exception:
+        body_text = ""
+    if all(p in body_text for p in ("100 downloads", "try again tomorrow")):
+        return True
+    if any(p in body_text for p in phrases):
+        return True
+    try:
+        modal_text = page.locator("#GenericModal, .modal-content").inner_text(timeout=1500).lower()
+    except Exception:
+        modal_text = ""
+    return any(p in modal_text for p in phrases)
+
+
 def click_if_visible(page, name: str, timeout: int = 2500):
     try:
         page.get_by_role("button", name=name).click(timeout=timeout)
@@ -231,7 +252,13 @@ def download_current_results(page, save_path: Path):
         with page.expect_download(timeout=90_000) as download_info:
             final_download.click()
         download = download_info.value
-    except TimeoutError:
+    except TimeoutError as exc:
+        if _detect_mls_daily_download_cap(page):
+            close_download_modal_if_open(page)
+            raise RuntimeError(
+                "MLS daily download cap reached (100/day). "
+                "Stop retries and run again after the cap resets tomorrow."
+            ) from exc
         print(MLS_DOWNLOAD_TIMEOUT_HINT)
         close_download_modal_if_open(page)
         raise

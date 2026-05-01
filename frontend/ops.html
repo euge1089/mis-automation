@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/ops.css?v=6" />
+    <link rel="stylesheet" href="/static/ops.css?v=10" />
   </head>
   <body>
     <header class="ops-header">
@@ -69,14 +69,18 @@
       </div>
       <p id="historyCountsStatus" class="ops-muted"></p>
       <div class="history-charts-grid">
-        <div class="chart-card">
+        <div class="history-chart-panel">
           <p class="chart-title">Sold listings saved</p>
-          <svg id="soldMonthlyChart" class="history-chart" viewBox="0 0 900 340" role="img" aria-label="Sold history by month"></svg>
+          <div class="history-chart-scroll">
+            <svg id="soldMonthlyChart" class="history-chart" viewBox="0 0 900 340" role="img" aria-label="Sold history by month"></svg>
+          </div>
           <p id="soldChartHover" class="ops-muted small"></p>
         </div>
-        <div class="chart-card">
+        <div class="history-chart-panel">
           <p class="chart-title">Rented listings saved</p>
-          <svg id="rentedMonthlyChart" class="history-chart" viewBox="0 0 900 340" role="img" aria-label="Rented history by month"></svg>
+          <div class="history-chart-scroll">
+            <svg id="rentedMonthlyChart" class="history-chart" viewBox="0 0 900 340" role="img" aria-label="Rented history by month"></svg>
+          </div>
           <p id="rentedChartHover" class="ops-muted small"></p>
         </div>
       </div>
@@ -105,7 +109,19 @@
       <h2>What each job does</h2>
       <p class="ops-muted">Plain-language guide — you do not need to read server logs to understand these.</p>
       <p id="catalogStatus" class="ops-muted"></p>
-      <div id="catalogBody" class="ops-catalog"></div>
+      <div class="table-wrap">
+        <table class="catalog-table">
+          <thead>
+            <tr>
+              <th>Job</th>
+              <th>What it does</th>
+              <th>Successful means</th>
+              <th>Schedule hint</th>
+            </tr>
+          </thead>
+          <tbody id="catalogBody"></tbody>
+        </table>
+      </div>
     </section>
 
     <section class="ops-panel">
@@ -117,6 +133,7 @@
             <tr>
               <th>Job</th>
               <th>Last success (ET)</th>
+              <th>Next scheduled run</th>
               <th>Run ID</th>
             </tr>
           </thead>
@@ -203,6 +220,6 @@
     </dialog>
     </main>
 
-    <script src="/static/ops.js?v=6"></script>
+    <script src="/static/ops.js?v=11"></script>
   </body>
 </html>

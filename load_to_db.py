@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 from datetime import date, datetime, timezone
@@ -556,15 +557,28 @@ def memorialize_history_window(
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Load cleaned/analytics outputs into Postgres tables")
+    parser.add_argument(
+        "--skip-active",
+        action="store_true",
+        help="Do not reload active_listings (useful for sold/rented-only pipeline runs).",
+    )
+    args = parser.parse_args()
+
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as session:
-        active_count = load_active_listings(session)
+        active_count = None
+        if not args.skip_active:
+            active_count = load_active_listings(session)
         rent_count = load_rent_analytics(session)
         rent_sqft_count = load_rent_sqft_analytics(session)
         sold_snap = load_sold_analytics_snapshot(session)
         session.commit()
 
-    print(f"Loaded active listings: {active_count:,}")
+    if active_count is None:
+        print("Skipped active listings load (--skip-active).")
+    else:
+        print(f"Loaded active listings: {active_count:,}")
     print(f"Loaded rent-by-zip-bedroom rows: {rent_count:,}")
     print(f"Loaded rent-by-zip-sqft rows: {rent_sqft_count:,}")
     if sold_snap is not None:
