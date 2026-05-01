@@ -56,7 +56,11 @@ def validate_monthly_outputs() -> None:
             f"Validation failed: rent_by_zip_bedrooms.csv has unexpectedly few rows ({len(rent_model)})"
         )
 
-    sold_clean = pd.read_csv(CLEANED_DIR / "sold_clean_latest.csv", low_memory=False)
+    sold_clean = pd.read_csv(
+        CLEANED_DIR / "sold_clean_latest.csv",
+        low_memory=False,
+        dtype={"zip_code": "string"},
+    )
     if "zip_code" in sold_clean.columns:
         zip_series = sold_clean["zip_code"].astype("string").str.strip()
         short_numeric = zip_series.str.fullmatch(r"\d{1,4}", na=False).sum()
