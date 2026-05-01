@@ -81,6 +81,12 @@ def _last_success_for_job(db: Session, job_key: str) -> OpsLastSuccessOut | None
     return OpsLastSuccessOut(finished_at=r.finished_at, run_id=r.id)
 
 
+def _run_by_id(db: Session, run_id: int | None) -> PipelineRun | None:
+    if run_id is None:
+        return None
+    return db.execute(select(PipelineRun).where(PipelineRun.id == run_id)).scalars().first()
+
+
 def _load_sold_df(db: Session) -> pd.DataFrame:
     """Load sold analytics rows from DB snapshot (refreshed by ``load_to_db.py``)."""
     stmt = select(SoldAnalyticsSnapshot)
@@ -240,6 +246,23 @@ def ops_overview(db: Session = Depends(get_db)) -> OpsOverviewOut:
         parts.append(f"About {count:,} active listings are stored in the database now.")
     else:
         parts.append("Active listing count could not be read from the database.")
+
+    # Add an easy-to-read listing volume datapoint for the latest successful daily run.
+    daily_run = _run_by_id(db, daily.run_id if daily else None)
+    if daily_run and isinstance(daily_run.detail_json, dict):
+        raw_rows = daily_run.detail_json.get("active_export_rows_raw_sum")
+        cleaned_rows = daily_run.detail_json.get("active_listings_after_cleaning")
+        if isinstance(raw_rows, int) and isinstance(cleaned_rows, int):
+            parts.append(
+                "Most recent successful daily pull downloaded about "
+                f"{raw_rows:,} raw MLS rows and kept {cleaned_rows:,} active listings after cleaning."
+            )
+        elif isinstance(cleaned_rows, int):
+            parts.append(
+                "Most recent successful daily run kept "
+                f"{cleaned_rows:,} active listings after cleaning."
+            )
+
     freshness = OpsActiveListingsFreshnessOut(
         message=" ".join(parts),
         active_listing_count=count,
