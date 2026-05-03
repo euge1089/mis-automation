@@ -1,7 +1,9 @@
 import argparse
 import logging
+from datetime import datetime
 from pathlib import Path
 import os
+import re
 import time
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright, TimeoutError
@@ -32,6 +34,8 @@ SOLD_MIN_PRICE = 180_000
 ADAPTIVE_MIN_STEP = 1_000
 ADAPTIVE_MAX_STEP = 500_000
 ADAPTIVE_INITIAL_STEP = 100_000
+PROJECT_DIR = Path(__file__).parent
+LOGIN_SEARCH_RETRIES = 2
 
 
 def _detect_mls_daily_download_cap(page) -> bool:
@@ -77,23 +81,119 @@ def wait_for_page_blocker_to_clear(page, timeout=30000):
     time.sleep(1)
 
 
+def _clear_sign_in_violation_notice(page) -> bool:
+    try:
+        body_text = page.locator("body").inner_text(timeout=2000).lower()
+    except Exception:
+        body_text = ""
+    if "sign-in violation notice" not in body_text and "disconnected the previous sign-in" not in body_text:
+        return False
+
+    print("Detected Sign-In Violation Notice; continuing to Pinergy...")
+    clickers = (
+        lambda: page.get_by_role("button", name=re.compile(r"continue to pinergy", re.I)).click(timeout=5000),
+        lambda: page.get_by_role("button", name=re.compile(r"click here to continue", re.I)).click(timeout=5000),
+        lambda: page.get_by_role("link", name=re.compile(r"continue to pinergy", re.I)).click(timeout=5000),
+    )
+    for fn in clickers:
+        try:
+            fn()
+            page.wait_for_load_state("load")
+            time.sleep(1.2)
+            return True
+        except Exception:
+            continue
+    print("Warning: Sign-In Violation Notice detected but could not click continue button.")
+    return False
+
+
+def _open_search_page_after_login(page) -> None:
+    _clear_sign_in_violation_notice(page)
+    page.wait_for_load_state("domcontentloaded")
+    time.sleep(1.2)
+    last_exc: Exception | None = None
+    attempts = (
+        lambda: page.get_by_role("link", name="Search").click(timeout=90_000),
+        lambda: page.get_by_role("link", name=re.compile(r"^\s*Search\s*$", re.I)).click(timeout=30_000),
+        lambda: page.get_by_role("link", name=re.compile(r"Search", re.I)).first.click(timeout=30_000),
+        lambda: page.locator("a").filter(has_text=re.compile(r"^\s*Search\s*$", re.I)).first.click(timeout=30_000),
+    )
+    for i, fn in enumerate(attempts):
+        _clear_sign_in_violation_notice(page)
+        try:
+            fn()
+            page.wait_for_load_state("load")
+            wait_for_page_blocker_to_clear(page)
+            return
+        except Exception as exc:
+            last_exc = exc
+            print(f"  Search navigation attempt {i + 1}/{len(attempts)} failed: {exc!r}")
+            page.keyboard.press("Escape")
+            time.sleep(1.2)
+    _dump_search_timeout_artifacts(page, scraper_name="sold")
+    raise TimeoutError("Could not click Search after login (modal blocking or MLS UI changed).") from last_exc
+
+
+def _dump_search_timeout_artifacts(page, *, scraper_name: str) -> None:
+    debug_dir = PROJECT_DIR / "logs" / "scraper_debug"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    base = f"{scraper_name}_search_timeout_{stamp}"
+    screenshot_path = debug_dir / f"{base}.png"
+    html_path = debug_dir / f"{base}.html"
+    meta_path = debug_dir / f"{base}.txt"
+    try:
+        page.screenshot(path=str(screenshot_path), full_page=True)
+    except Exception as exc:
+        print(f"Warning: could not save timeout screenshot: {exc!r}")
+    try:
+        html_path.write_text(page.content(), encoding="utf-8")
+    except Exception as exc:
+        print(f"Warning: could not save timeout HTML: {exc!r}")
+    try:
+        meta = [
+            f"url={page.url}",
+            f"title={page.title() if hasattr(page, 'title') else ''}",
+            f"saved_screenshot={screenshot_path}",
+            f"saved_html={html_path}",
+        ]
+        meta_path.write_text("\n".join(meta) + "\n", encoding="utf-8")
+        print(f"Saved search-timeout debug artifacts: {meta_path}")
+    except Exception as exc:
+        print(f"Warning: could not save timeout metadata: {exc!r}")
+
+
 def login(page, username: str, password: str):
-    print("Opening MLS login page...")
-    page.goto(LOGIN_URL, wait_until="load")
+    last_exc: Exception | None = None
+    for attempt in range(1, LOGIN_SEARCH_RETRIES + 1):
+        print("Opening MLS login page...")
+        page.goto(LOGIN_URL, wait_until="load")
 
-    click_if_visible(page, "OK", timeout=2500)
+        click_if_visible(page, "OK", timeout=2500)
 
-    print("Logging in...")
-    page.get_by_role("textbox", name="Enter Your Agent ID").fill(username)
-    page.get_by_role("textbox", name="Password Input").fill(password)
-    page.get_by_role("button", name="Sign In").click()
+        print("Logging in...")
+        page.get_by_role("textbox", name="Enter Your Agent ID").fill(username)
+        page.get_by_role("textbox", name="Password Input").fill(password)
+        page.get_by_role("button", name="Sign In").click()
 
-    click_if_visible(page, "Click Here to Continue to", timeout=5000)
+        click_if_visible(page, "Click Here to Continue to", timeout=5000)
 
-    print("Opening search page...")
-    page.get_by_role("link", name="Search").click()
-    page.wait_for_load_state("load")
-    wait_for_page_blocker_to_clear(page)
+        print("Opening search page...")
+        try:
+            _open_search_page_after_login(page)
+            return
+        except TimeoutError as exc:
+            last_exc = exc
+            if attempt >= LOGIN_SEARCH_RETRIES:
+                break
+            print(
+                f"Login/search attempt {attempt}/{LOGIN_SEARCH_RETRIES} failed; "
+                "retrying a full login once."
+            )
+            page.keyboard.press("Escape")
+            time.sleep(2)
+    if last_exc is not None:
+        raise last_exc
 
 
 def set_static_filters(page, timeframe: str):

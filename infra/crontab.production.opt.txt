@@ -23,8 +23,8 @@ MLS_AUTOMATION_DIR=/opt/mls-automation
 
 # Daily active: deletes prior `downloads/active/active_export_*.csv`, scrapes MLS, combine/clean/validate, load Postgres.
 # Example times — edit minutes/hours to taste:
-#   15 2 * * *  → 02:15 local (TZ above)
-10 6 * * * cd "$MLS_AUTOMATION_DIR" && /bin/bash scripts/run_scheduled_pipeline.sh daily-active --with-scrape --headless >> /opt/mls-automation/logs/cron-daily-active.stdout.log 2>&1
+#   00 6 * * *  → 06:00 local (TZ above)
+0 6 * * * cd "$MLS_AUTOMATION_DIR" && /bin/bash scripts/run_scheduled_pipeline.sh daily-active --with-scrape --headless >> /opt/mls-automation/logs/cron-daily-active.stdout.log 2>&1
 
 # Weekly sold/rented (Sunday example):
-40 6 * * 0 cd "$MLS_AUTOMATION_DIR" && /bin/bash scripts/run_scheduled_pipeline.sh weekly-sold-rented --headless >> /opt/mls-automation/logs/cron-weekly-sold-rented.stdout.log 2>&1
+30 7 * * 0 cd "$MLS_AUTOMATION_DIR" && /bin/bash scripts/run_scheduled_pipeline.sh weekly-sold-rented --headless >> /opt/mls-automation/logs/cron-weekly-sold-rented.stdout.log 2>&1
