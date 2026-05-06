@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MLS Analytics Dashboard</title>
+    <title>Homebuyer Price &amp; Payment Guide (Demo)</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/styles.css?v=20260333" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260335" />
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -42,13 +42,16 @@
         Start with an area you care about. We’ll show you what similar homes have actually sold for recently, then pull in active listings that match those filters. You can always narrow things down later.
       </p>
       <div class="grid">
-        <label>ZIP <input id="zip_code" type="text" placeholder="02116" /></label>
-        <label>Town <input id="town" type="text" placeholder="Boston" /></label>
-        <label>Min Price <input id="min_price" type="number" placeholder="500000" /></label>
-        <label>Max Price <input id="max_price" type="number" placeholder="1500000" /></label>
-        <label>Min Beds <input id="min_beds" type="number" step="0.5" placeholder="2" /></label>
-        <label>Max Beds <input id="max_beds" type="number" step="0.5" placeholder="4" /></label>
+        <label>ZIP code (5 digits) <input id="zip_code" type="text" placeholder="02116" /></label>
+        <label>Town or city <input id="town" type="text" placeholder="Boston" /></label>
+        <label>Min list price ($) <input id="min_price" type="number" placeholder="500000" /></label>
+        <label>Max list price ($) <input id="max_price" type="number" placeholder="1500000" /></label>
+        <label>Min bedrooms <input id="min_beds" type="number" step="0.5" placeholder="2" /></label>
+        <label>Max bedrooms <input id="max_beds" type="number" step="0.5" placeholder="4" /></label>
       </div>
+      <p class="note">
+        Tip: enter at least a ZIP code or town so results stay focused on the area you care about.
+      </p>
       <div class="actions">
         <button id="searchBtn">Show homes and insights</button>
         <button id="clearBtn" class="secondary">Clear</button>
@@ -71,26 +74,50 @@
     </section>
 
     <section class="panel" id="areaInsights">
-      <h2>Area snapshot (recent sales)</h2>
+      <h2>
+        Area snapshot (recent sales)
+        <span id="area_freshness" class="freshness-badge"></span>
+      </h2>
       <p class="note" id="area_note">
         Enter a ZIP (and optionally town and bedrooms) above, then click “Show homes and insights”.
         We’ll look at roughly the last year of similar sales in that area.
       </p>
       <div class="grid area-summary">
         <div>
-          <h3>Typical sale price</h3>
+          <h3>Typical sold price</h3>
           <p id="area_price_main" class="stat-large"></p>
           <p id="area_price_range" class="note"></p>
+          <p id="area_price_confidence" class="metric-chip-row"></p>
+          <details class="why-matters">
+            <summary>Why this matters</summary>
+            <p class="note">
+              This helps you avoid overpaying by showing what similar homes actually closed for in this area.
+            </p>
+          </details>
         </div>
         <div>
           <h3>Price per square foot</h3>
           <p id="area_ppsf" class="stat-large"></p>
           <p class="note">Only shown when enough homes report their size.</p>
+          <details class="why-matters">
+            <summary>Why this matters</summary>
+            <p class="note">
+              Price per square foot helps compare homes of different sizes on a more apples-to-apples basis.
+            </p>
+          </details>
         </div>
         <div>
-          <h3>Recent activity</h3>
+          <h3>Recent sales activity</h3>
           <p id="area_volume" class="stat-large"></p>
           <p id="area_trend_summary" class="note"></p>
+          <p id="area_trend_confidence" class="metric-chip-row"></p>
+          <div id="area_trend_sparkline" class="sparkline-wrap" aria-label="Recent sales trend chart"></div>
+          <details class="why-matters">
+            <summary>Why this matters</summary>
+            <p class="note">
+              This gives quick market context so you can see if prices have generally been rising, flat, or easing.
+            </p>
+          </details>
         </div>
         <div>
           <h3>Current asking prices</h3>
@@ -101,7 +128,10 @@
     </section>
 
     <section class="panel" id="listingInsights">
-      <h2>Check a specific home</h2>
+      <h2>
+        Check a specific home
+        <span id="comps_freshness" class="freshness-badge"></span>
+      </h2>
       <p class="note">
         After you run a search, pick one of the homes below to see how its asking price compares to what similar places nearby have actually sold for, plus a rough monthly payment.
       </p>
@@ -134,30 +164,45 @@
             <h4>Estimated monthly payment</h4>
             <p id="listing_payment" class="stat-large"></p>
             <p id="listing_payment_note" class="note"></p>
+            <details class="why-matters">
+              <summary>Why this matters</summary>
+              <p class="note">
+                Monthly cost is often the real budget constraint. Use this as a planning estimate before talking with your lender.
+              </p>
+            </details>
           </div>
         </div>
-        <div class="table-wrap listing-comps-table">
-          <table>
-            <thead>
-              <tr>
-                <th>Address</th>
-                <th>Sold price</th>
-                <th>Beds</th>
-                <th>Baths</th>
-                <th>Sqft</th>
-                <th>Sale date</th>
-              </tr>
-            </thead>
-            <tbody id="listing_comps_body"></tbody>
-          </table>
+        <div id="listing_takeaways" class="takeaways-panel" hidden>
+          <h4>Key takeaways</h4>
+          <ul id="listing_takeaways_list"></ul>
         </div>
+        <details id="listing_comps_toggle" class="listing-comps-toggle" open>
+          <summary>Comparable recent sales</summary>
+          <div id="listing_comps_wrap" class="table-wrap listing-comps-table">
+            <p class="note" id="listing_comps_note"></p>
+            <p id="listing_comp_confidence" class="metric-chip-row"></p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Address</th>
+                  <th>Sold price</th>
+                  <th>Beds</th>
+                  <th>Baths</th>
+                  <th>Sqft</th>
+                  <th>Sale date</th>
+                </tr>
+              </thead>
+              <tbody id="listing_comps_body"></tbody>
+            </table>
+          </div>
+        </details>
       </div>
     </section>
 
     <section class="filters financing-section">
       <h2>Financing (monthly carry estimates)</h2>
       <p class="note">
-        If you plan to pay cash, you can skip this section. For mortgages, property tax uses the annual amount from MLS when available (shown as monthly). Insurance and misc are your own estimates. Mortgage rates below are <strong>illustrative</strong>—change the APR to match a real lender quote. Not financial advice; does not include PMI, HOA, or closing costs.
+        If you plan to pay cash, you can skip this section. For mortgages, property tax uses the annual tax amount from listing data when available (shown monthly). Insurance and HOA/other costs are your own estimates. Rates below are <strong>illustrative</strong>—replace APR with a real lender quote. Not financial advice; does not include PMI, closing costs, or one-time fees.
       </p>
       <div class="grid">
         <label>
@@ -187,8 +232,8 @@
           <input id="fin_insurance" type="number" value="0" min="0" step="50" placeholder="150" />
         </label>
         <label>
-          Monthly misc ($)
-          <input id="fin_misc" type="number" value="0" min="0" step="25" placeholder="HOA or maintenance" />
+          Monthly HOA/other ($)
+          <input id="fin_misc" type="number" value="0" min="0" step="25" placeholder="HOA, maintenance, etc." />
         </label>
       </div>
       <p class="note fin-rate-hint" id="fin_preset_hint"></p>
@@ -199,23 +244,37 @@
         <h2>Map View</h2>
         <div id="map"></div>
         <p class="note">
-          Pins use coordinates from your data when present; otherwise addresses are geocoded in small
-          batches (may take a moment). Results stay saved for next time.
+          Most pins come from listing coordinates. If a listing is missing coordinates, we try to place
+          it by street address (which can be slightly off). Use this map as a guide, then confirm details
+          in the listing.
         </p>
       </div>
       <div class="panel">
-        <h2>Rent Comps</h2>
-        <p class="note comp-hint">Filtered by the ZIP and min/max beds above (updates when you search).</p>
-        <div class="table-wrap comp-table-scroll">
+        <h2>
+          Rental benchmarks (recent leases)
+          <span id="rent_freshness" class="freshness-badge"></span>
+        </h2>
+        <p class="note comp-hint">Filtered by ZIP and bedroom range above (updates when you search).</p>
+        <p class="note" id="rent_confidence_note">
+          Confidence is based on how many recent rentals were available: high = many, medium = some, low = only a few.
+        </p>
+        <p id="rent_quality_chip" class="metric-chip-row"></p>
+        <details class="why-matters">
+          <summary>Why this matters</summary>
+          <p class="note">
+            Even if you plan to live in the home, rental benchmarks help estimate downside protection and resale flexibility.
+          </p>
+        </details>
+        <div id="rent_table_wrap" class="table-wrap comp-table-scroll">
           <table id="compTable">
             <thead>
               <tr>
                 <th>ZIP</th>
                 <th>Beds</th>
-                <th>Median Rent</th>
-                <th>Avg Rent</th>
-                <th>Sample</th>
-                <th>Confidence</th>
+                <th>Typical rent (median)</th>
+                <th>Average rent</th>
+                <th>Recent rentals</th>
+                <th>Confidence level</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -225,23 +284,27 @@
     </section>
 
     <section class="panel">
-      <h2>Active Listing Results</h2>
-      <div class="table-wrap">
+      <h2>
+        Homes for sale that match your filters
+        <span id="listings_freshness" class="freshness-badge"></span>
+      </h2>
+      <p class="note">Use this list to shortlist homes, then use “Check a specific home” above for deeper comparison.</p>
+      <div id="results_table_wrap" class="table-wrap">
         <table id="resultsTable">
           <thead>
             <tr>
-              <th>MLS ID</th>
+              <th>Listing ID</th>
               <th>Address</th>
               <th>Town</th>
               <th>ZIP</th>
-              <th>On map</th>
+              <th>On map?</th>
               <th>Beds</th>
               <th>Baths</th>
-              <th>Sqft</th>
+              <th>Floorspace (sq ft)</th>
               <th>List Price</th>
-              <th>Tax/mo</th>
-              <th>P&amp;I</th>
-              <th>Est. carry/mo</th>
+              <th>Monthly tax</th>
+              <th>Loan payment (P&amp;I)</th>
+              <th>Est. total monthly</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -249,12 +312,17 @@
       </div>
     </section>
     </main>
+    <footer class="site-footer-note">
+      <p>
+        Planning tool only. This is not an appraisal, investment advice, or a lender quote. Confirm pricing, taxes, financing, and property condition with licensed professionals.
+      </p>
+    </footer>
 
     <script
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""
     ></script>
-    <script src="/static/app.js?v=20260336"></script>
+    <script src="/static/app.js?v=20260338"></script>
   </body>
 </html>

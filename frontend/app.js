@@ -3,6 +3,28 @@ const loadingBarWrap = document.getElementById("loadingBarWrap");
 const loadingBarFill = document.getElementById("loadingBarFill");
 const resultsBody = document.querySelector("#resultsTable tbody");
 const compBody = document.querySelector("#compTable tbody");
+const searchBtn = document.getElementById("searchBtn");
+const analyzeBtn = document.getElementById("analyzeListingBtn");
+const listingCompsToggle = document.getElementById("listing_comps_toggle");
+
+const AREA_METRIC_IDS = [
+  "area_price_main",
+  "area_price_range",
+  "area_ppsf",
+  "area_volume",
+  "area_trend_summary",
+  "area_active_summary",
+  "area_active_note",
+];
+
+const LISTING_METRIC_IDS = [
+  "listing_price_vs_area",
+  "listing_price_band",
+  "listing_ppsf",
+  "listing_ppsf_note",
+  "listing_payment",
+  "listing_payment_note",
+];
 
 function showLoadingBarIndeterminate() {
   loadingBarWrap.hidden = false;
@@ -24,6 +46,138 @@ function hideLoadingBar() {
   loadingBarWrap.classList.remove("indeterminate");
   loadingBarFill.style.width = "0%";
   loadingBarWrap.setAttribute("aria-valuenow", "0");
+}
+
+function formatFreshness(date = new Date()) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function setFreshness(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = value ? `Updated ${value}` : "";
+}
+
+function setQualityChip(id, label, tone = "neutral") {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (!label) {
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = `<span class="quality-chip quality-chip--${tone}">${escapeHtml(label)}</span>`;
+}
+
+function qualityFromCount(count, high = 30, medium = 12) {
+  const n = Number(count || 0);
+  if (n >= high) return { tone: "good", label: "High confidence" };
+  if (n >= medium) return { tone: "medium", label: "Medium confidence" };
+  if (n > 0) return { tone: "low", label: "Limited confidence" };
+  return { tone: "neutral", label: "No confidence score yet" };
+}
+
+function setSkeletonState(ids, isLoading) {
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (isLoading) {
+      el.classList.add("skeleton-block");
+      if (!el.textContent.trim()) el.textContent = " ";
+    } else {
+      el.classList.remove("skeleton-block");
+      if (el.textContent === " ") el.textContent = "";
+    }
+  }
+}
+
+function setTableSkeleton(selector, isLoading) {
+  const el = document.querySelector(selector);
+  if (!el) return;
+  el.classList.toggle("table-skeleton", Boolean(isLoading));
+}
+
+function renderTrendSparkline(rows) {
+  const wrap = document.getElementById("area_trend_sparkline");
+  if (!wrap) return;
+  if (!Array.isArray(rows) || rows.length < 2) {
+    wrap.innerHTML = "";
+    return;
+  }
+  const values = rows.map((r) => toNumberOrNull(r.median_price)).filter((v) => v != null);
+  if (values.length < 2) {
+    wrap.innerHTML = "";
+    return;
+  }
+  const width = 220;
+  const height = 52;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(1, max - min);
+  const points = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * width;
+    const y = height - ((v - min) / range) * height;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const trendUp = values[values.length - 1] >= values[0];
+  wrap.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Recent sale trend">
+      <polyline points="${points.join(" ")}" fill="none" stroke="${trendUp ? "#0f766e" : "#b91c1c"}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+    </svg>
+  `;
+}
+
+function syncListingCompsToggleForViewport() {
+  if (!listingCompsToggle) return;
+  const isSmall = window.matchMedia("(max-width: 760px)").matches;
+  if (isSmall && !listingCompsToggle.dataset.userTouched) {
+    listingCompsToggle.open = false;
+  }
+  if (!isSmall) {
+    listingCompsToggle.open = true;
+  }
+}
+
+function renderListingTakeaways(summary, subject, carry) {
+  const panel = document.getElementById("listing_takeaways");
+  const list = document.getElementById("listing_takeaways_list");
+  if (!panel || !list) return;
+  const takeaways = [];
+  const diffPct = toNumberOrNull(summary.list_vs_median_pct);
+  const median = toNumberOrNull(summary.median_price);
+  const totalSet = toNumberOrNull(summary.total_comps_considered);
+  if (diffPct != null) {
+    const dir = Math.abs(diffPct) < 1 ? "right around" : diffPct > 0 ? "above" : "below";
+    takeaways.push(`This asking price is ${dir} typical nearby sale prices (${Math.abs(diffPct).toFixed(1)}% difference).`);
+  }
+  if (median != null) {
+    takeaways.push(`Typical nearby sold price is about ${formatMoney(median)} for similar homes.`);
+  }
+  if (carry && carry.total) {
+    takeaways.push(`Estimated monthly carrying cost is around ${formatMoney(carry.total)} before one-time closing costs.`);
+  }
+  if (totalSet != null && totalSet > 0) {
+    takeaways.push(`Comparison confidence is based on ${totalSet} matching sales in the full comp set.`);
+  }
+  if (!takeaways.length) {
+    panel.hidden = true;
+    list.innerHTML = "";
+    return;
+  }
+  list.innerHTML = takeaways.slice(0, 3).map((t) => `<li>${escapeHtml(t)}</li>`).join("");
+  panel.hidden = false;
+}
+
+function clearListingTakeaways() {
+  const panel = document.getElementById("listing_takeaways");
+  const list = document.getElementById("listing_takeaways_list");
+  if (!panel || !list) return;
+  panel.hidden = true;
+  list.innerHTML = "";
 }
 
 function finishLoadingBar() {
@@ -109,6 +263,33 @@ function normalizeUsZip5(raw) {
   if (digits.length >= 9) return digits.slice(0, 5);
   if (digits.length > 5) return digits.slice(0, 5);
   return digits.padStart(5, "0");
+}
+
+function hasAreaScope(params) {
+  return params.has("zip_code") || params.has("town");
+}
+
+function renderEmptyTableRow(tbody, colSpan, message) {
+  tbody.innerHTML = "";
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td colspan="${colSpan}" class="note">${escapeHtml(message)}</td>`;
+  tbody.appendChild(tr);
+}
+
+function formatConfidenceLabel(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  if (!value) return "";
+  if (value === "high") return "High (many rentals)";
+  if (value === "medium") return "Medium (some rentals)";
+  if (value === "low") return "Low (few rentals)";
+  return raw;
+}
+
+function formatDateShort(raw) {
+  if (!raw) return "";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return String(raw);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 /** Fixed-rate monthly payment (principal + interest). rateAnnual is decimal, e.g. 0.065 */
@@ -228,7 +409,7 @@ function renderListings(rows) {
       const option = document.createElement("option");
       const addr = row.full_address ?? row.address ?? "(no address)";
       option.value = String(row.mls_id);
-      option.textContent = `${row.mls_id} — ${addr}`;
+      option.textContent = `${addr} (${row.mls_id})`;
       select.appendChild(option);
     }
     // try to preserve previous selection if still present
@@ -237,24 +418,33 @@ function renderListings(rows) {
     }
   }
 
+  if (!rows.length) {
+    renderEmptyTableRow(
+      resultsBody,
+      12,
+      "No homes match yet. Try this next: widen bedroom range, remove max price, or try a nearby ZIP/town.",
+    );
+    return;
+  }
+
   for (const row of rows) {
     const tr = document.createElement("tr");
     const onMap = hasLatLon(row) ? "Yes" : "No";
     const addr = row.full_address ?? row.address ?? "";
     const { taxDisp, piDisp, totalDisp } = formatCarryCells(row);
     tr.innerHTML = `
-      <td>${escapeHtml(row.mls_id)}</td>
-      <td>${escapeHtml(addr)}</td>
-      <td>${escapeHtml(row.town)}</td>
-      <td>${escapeHtml(row.zip_code)}</td>
-      <td>${onMap}</td>
-      <td>${escapeHtml(row.bedrooms)}</td>
-      <td>${escapeHtml(row.total_baths)}</td>
-      <td>${escapeHtml(row.square_feet)}</td>
-      <td>${escapeHtml(formatMoney(row.list_price))}</td>
-      <td>${escapeHtml(taxDisp)}</td>
-      <td>${escapeHtml(piDisp)}</td>
-      <td>${escapeHtml(totalDisp)}</td>
+      <td data-label="Listing ID">${escapeHtml(row.mls_id)}</td>
+      <td data-label="Address">${escapeHtml(addr)}</td>
+      <td data-label="Town">${escapeHtml(row.town)}</td>
+      <td data-label="ZIP">${escapeHtml(row.zip_code)}</td>
+      <td data-label="On map?">${onMap}</td>
+      <td data-label="Beds">${escapeHtml(row.bedrooms)}</td>
+      <td data-label="Baths">${escapeHtml(row.total_baths)}</td>
+      <td data-label="Floorspace (sq ft)">${escapeHtml(row.square_feet)}</td>
+      <td data-label="List Price">${escapeHtml(formatMoney(row.list_price))}</td>
+      <td data-label="Monthly tax">${escapeHtml(taxDisp)}</td>
+      <td data-label="Loan payment (P&I)">${escapeHtml(piDisp)}</td>
+      <td data-label="Est. total monthly">${escapeHtml(totalDisp)}</td>
     `;
     resultsBody.appendChild(tr);
   }
@@ -381,11 +571,9 @@ async function loadCompsFromMainFilters() {
   }
 
   if (!params.has("zip_code")) {
-    compBody.innerHTML = "";
-    const tr = document.createElement("tr");
-    tr.innerHTML =
-      '<td colspan="6" class="note">Enter a ZIP above, then search, to load rent comps for that area.</td>';
-    compBody.appendChild(tr);
+    renderEmptyTableRow(compBody, 6, "Enter a ZIP above, then click “Show homes and insights” to load rental benchmarks.");
+    setFreshness("rent_freshness", "");
+    setQualityChip("rent_quality_chip", "");
     return;
   }
 
@@ -395,27 +583,47 @@ async function loadCompsFromMainFilters() {
   if (maxB != null) params.set("max_beds", String(maxB));
 
   try {
+    setTableSkeleton("#rent_table_wrap", true);
     const res = await fetch(`/analytics/rent-by-zip-bedroom?${params.toString()}`);
-    if (!res.ok) throw new Error(`Rent comps failed (${res.status})`);
+    if (!res.ok) throw new Error("We couldn't load rental benchmarks right now.");
     const rows = await res.json();
     compBody.innerHTML = "";
+    if (!rows.length) {
+      renderEmptyTableRow(
+        compBody,
+        6,
+        "No rental benchmarks found. Try this next: broaden bedroom filters or test a nearby ZIP.",
+      );
+      setFreshness("rent_freshness", formatFreshness());
+      setQualityChip("rent_quality_chip", "No benchmark confidence yet", "neutral");
+      return;
+    }
+    let maxSample = 0;
     for (const row of rows.slice(0, 200)) {
+      maxSample = Math.max(maxSample, Number(row.sample_size || 0));
       const tr = document.createElement("tr");
       tr.innerHTML = `
-      <td>${row.zip_code}</td>
-      <td>${row.bedrooms}</td>
-      <td>${formatMoney(row.median_rent)}</td>
-      <td>${formatMoney(row.avg_rent)}</td>
-      <td>${row.sample_size ?? ""}</td>
-      <td>${row.confidence ?? ""}</td>
+      <td data-label="ZIP">${row.zip_code}</td>
+      <td data-label="Beds">${row.bedrooms}</td>
+      <td data-label="Typical rent (median)">${formatMoney(row.median_rent)}</td>
+      <td data-label="Average rent">${formatMoney(row.avg_rent)}</td>
+      <td data-label="Recent rentals">${row.sample_size ?? ""}</td>
+      <td data-label="Confidence level">${formatConfidenceLabel(row.confidence ?? "")}</td>
     `;
       compBody.appendChild(tr);
     }
+    const rentQ = qualityFromCount(maxSample, 40, 12);
+    setQualityChip("rent_quality_chip", `${rentQ.label} (rental sample depth)`, rentQ.tone);
+    setFreshness("rent_freshness", formatFreshness());
   } catch (err) {
-    compBody.innerHTML = "";
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="6" class="note">${err.message}</td>`;
-    compBody.appendChild(tr);
+    renderEmptyTableRow(
+      compBody,
+      6,
+      "We couldn't load rental benchmarks right now. Please try again in a moment.",
+    );
+    setQualityChip("rent_quality_chip", "Rental confidence unavailable", "neutral");
+  } finally {
+    setTableSkeleton("#rent_table_wrap", false);
   }
 }
 
@@ -454,10 +662,15 @@ async function loadAreaStatsFromMainFilters() {
     trendSummaryEl.textContent = "";
     activeSummaryEl.textContent = "";
     activeNoteEl.textContent = "";
+    setFreshness("area_freshness", "");
+    setQualityChip("area_price_confidence", "");
+    setQualityChip("area_trend_confidence", "");
+    renderTrendSparkline([]);
     return;
   }
 
   try {
+    setSkeletonState(AREA_METRIC_IDS, true);
     const res = await fetch(`/sold-area-stats?${params.toString()}`);
     if (!res.ok) throw new Error(`Area stats failed (${res.status})`);
     const data = await res.json();
@@ -475,6 +688,10 @@ async function loadAreaStatsFromMainFilters() {
       trendSummaryEl.textContent = "";
       activeSummaryEl.textContent = "";
       activeNoteEl.textContent = "";
+      setFreshness("area_freshness", formatFreshness());
+      setQualityChip("area_price_confidence", "Low confidence (not enough similar sales)", "low");
+      setQualityChip("area_trend_confidence", "");
+      renderTrendSparkline([]);
       return;
     }
 
@@ -486,7 +703,7 @@ async function loadAreaStatsFromMainFilters() {
     const p75 = summary.price_p75;
     priceMainEl.textContent = pMed != null ? formatMoney(pMed) : "";
     if (p25 != null && p75 != null) {
-      priceRangeEl.textContent = `Most similar homes in this area sold between ${formatMoney(
+      priceRangeEl.textContent = `About half of similar homes in this area sold between ${formatMoney(
         p25,
       )} and ${formatMoney(p75)}.`;
     } else {
@@ -500,6 +717,8 @@ async function loadAreaStatsFromMainFilters() {
 
     const numSales = summary.num_sales;
     volEl.textContent = `About ${numSales} home${numSales === 1 ? "" : "s"} like this sold in the past year here.`;
+    const salesQ = qualityFromCount(numSales, 35, 12);
+    setQualityChip("area_price_confidence", `${salesQ.label} (${numSales} similar sales)`, salesQ.tone);
 
     if (trend.length >= 2) {
       const first = trend[0];
@@ -512,15 +731,24 @@ async function loadAreaStatsFromMainFilters() {
             : Number(changePct) > 0
             ? "have gone up"
             : "have gone down";
-        trendSummaryEl.textContent = `Over the last year, prices here ${dir} about ${Math.abs(
+        trendSummaryEl.textContent = `From ${first.month} to ${last.month}, prices here ${dir} about ${Math.abs(
           Number(changePct),
-        )}% over the last ${trend.length} months.`;
+        )}%. This is based on months with enough recorded sales.`;
       } else {
         trendSummaryEl.textContent = "";
       }
+      const trendQ = qualityFromCount(
+        trend.reduce((acc, cur) => acc + Number(cur.num_sales || 0), 0),
+        120,
+        45,
+      );
+      setQualityChip("area_trend_confidence", `${trendQ.label} (trend reliability)`, trendQ.tone);
     } else {
       trendSummaryEl.textContent = "";
+      setQualityChip("area_trend_confidence", "Trend confidence unavailable", "neutral");
     }
+    renderTrendSparkline(trend);
+    setFreshness("area_freshness", formatFreshness());
 
     if (active && active.num_active) {
       activeSummaryEl.textContent = `${active.num_active} active listing${
@@ -542,7 +770,8 @@ async function loadAreaStatsFromMainFilters() {
       activeNoteEl.textContent = "";
     }
   } catch (err) {
-    noteEl.textContent = String(err.message || err);
+    noteEl.textContent =
+      "We couldn't load area snapshot data right now. Please try again in a moment.";
     priceMainEl.textContent = "";
     priceRangeEl.textContent = "";
     ppsfEl.textContent = "";
@@ -550,6 +779,11 @@ async function loadAreaStatsFromMainFilters() {
     trendSummaryEl.textContent = "";
     activeSummaryEl.textContent = "";
     activeNoteEl.textContent = "";
+    setQualityChip("area_price_confidence", "Area confidence unavailable", "neutral");
+    setQualityChip("area_trend_confidence", "");
+    renderTrendSparkline([]);
+  } finally {
+    setSkeletonState(AREA_METRIC_IDS, false);
   }
 }
 
@@ -561,10 +795,33 @@ function refreshListingDisplays() {
 }
 
 async function searchListings() {
+  const params = getSearchParams();
+  if (!hasAreaScope(params)) {
+    statusEl.textContent =
+      "Add at least a ZIP code or town, then click “Show homes and insights” so we can keep results focused.";
+    await loadAreaStatsFromMainFilters();
+    renderEmptyTableRow(
+      resultsBody,
+      12,
+      "Add a ZIP code or town above to start your search. Next step: try ZIP first, then add beds/price.",
+    );
+    renderEmptyTableRow(
+      compBody,
+      6,
+      "Add a ZIP code above to load rental benchmarks. Next step: start with one ZIP, then refine bedrooms.",
+    );
+    markerLayer.clearLayers();
+    lastListingRows = [];
+    setFreshness("listings_freshness", "");
+    return;
+  }
+
   try {
     showLoadingBarIndeterminate();
     statusEl.textContent = "Loading… fetching area stats and listings.";
-    const params = getSearchParams();
+    if (searchBtn) searchBtn.disabled = true;
+    setTableSkeleton("#results_table_wrap", true);
+    setTableSkeleton("#rent_table_wrap", true);
 
     // Load area stats first so we can talk about “what’s normal” for this area.
     await loadAreaStatsFromMainFilters();
@@ -577,6 +834,7 @@ async function searchListings() {
     renderListings(rows);
     renderMarkers(rows);
     statusEl.textContent = `Loaded ${rows.length} listings (${countPins(rows)} on map).`;
+    setFreshness("listings_freshness", formatFreshness());
 
     setLoadingBarPercent(34);
     await loadCompsFromMainFilters();
@@ -608,7 +866,11 @@ async function searchListings() {
     }
   } catch (err) {
     hideLoadingBar();
-    statusEl.textContent = err.message;
+    statusEl.textContent = "We couldn't load homes right now. Please try again in a moment.";
+  } finally {
+    if (searchBtn) searchBtn.disabled = false;
+    setTableSkeleton("#results_table_wrap", false);
+    setTableSkeleton("#rent_table_wrap", false);
   }
 }
 
@@ -624,6 +886,7 @@ async function analyzeSelectedListing() {
   const payEl = document.getElementById("listing_payment");
   const payNoteEl = document.getElementById("listing_payment_note");
   const compsBody = document.getElementById("listing_comps_body");
+  const compsNoteEl = document.getElementById("listing_comps_note");
 
   if (!mlsId) {
     headlineEl.textContent = "";
@@ -635,7 +898,15 @@ async function analyzeSelectedListing() {
     ppsfNoteEl.textContent = "";
     payEl.textContent = "";
     payNoteEl.textContent = "";
-    compsBody.innerHTML = "";
+    renderEmptyTableRow(
+      compsBody,
+      6,
+      "Pick a home above, then click “Analyze this home” to load comparable recent sales.",
+    );
+    if (compsNoteEl) compsNoteEl.textContent = "";
+    setFreshness("comps_freshness", "");
+    setQualityChip("listing_comp_confidence", "");
+    clearListingTakeaways();
     return;
   }
 
@@ -644,10 +915,18 @@ async function analyzeSelectedListing() {
   headlineEl.textContent = addr ? "How does this home compare?" : "How does this home compare?";
   subEl.textContent =
     "We’ll look at roughly the last year of similar sales nearby to see what’s typical, then show a rough monthly payment using the financing settings above.";
+  if (compsNoteEl) compsNoteEl.textContent = "";
+  clearListingTakeaways();
 
   try {
+    setSkeletonState(LISTING_METRIC_IDS, true);
+    setTableSkeleton("#listing_comps_wrap", true);
+    if (analyzeBtn) {
+      analyzeBtn.disabled = true;
+      analyzeBtn.textContent = "Analyzing…";
+    }
     const res = await fetch(`/sold-comps?mls_id=${encodeURIComponent(mlsId)}`);
-    if (!res.ok) throw new Error(`Comps lookup failed (${res.status})`);
+    if (!res.ok) throw new Error("We couldn't load similar recent sales right now.");
     const data = await res.json();
 
     if (data.error) {
@@ -656,8 +935,10 @@ async function analyzeSelectedListing() {
       ppsfEl.textContent = "";
       ppsfNoteEl.textContent = "";
       payEl.textContent = "";
-      payNoteEl.textContent = data.error;
-      compsBody.innerHTML = "";
+      payNoteEl.textContent = "We couldn't analyze this home yet. Please try another listing.";
+      renderEmptyTableRow(compsBody, 6, "No comparable sales available for this listing.");
+      if (compsNoteEl) compsNoteEl.textContent = "";
+      setQualityChip("listing_comp_confidence", "Comp confidence unavailable", "neutral");
       return;
     }
 
@@ -673,7 +954,13 @@ async function analyzeSelectedListing() {
       ppsfNoteEl.textContent = "";
       payEl.textContent = "";
       payNoteEl.textContent = "";
-      compsBody.innerHTML = "";
+      renderEmptyTableRow(
+        compsBody,
+        6,
+        "No strong comparable sales were found. Try a nearby listing or a broader area search.",
+      );
+      if (compsNoteEl) compsNoteEl.textContent = "";
+      setQualityChip("listing_comp_confidence", "Limited confidence (few matching comps)", "low");
       return;
     }
 
@@ -702,7 +989,7 @@ async function analyzeSelectedListing() {
     }
 
     if (p25 != null && p75 != null) {
-      priceBandEl.textContent = `Recently, most similar homes nearby sold between ${formatMoney(
+      priceBandEl.textContent = `Recently, about half of similar homes nearby sold between ${formatMoney(
         p25,
       )} and ${formatMoney(p75)} in the last year or so.`;
     } else {
@@ -712,7 +999,7 @@ async function analyzeSelectedListing() {
     if (summary.median_ppsf != null && listPrice != null && subject.square_feet) {
       const subjPpsf = listPrice / subject.square_feet;
       ppsfEl.textContent = `${formatMoney(subjPpsf)} per sq ft (this home)`;
-      ppsfNoteEl.textContent = `Similar recent sales averaged around ${formatMoney(
+      ppsfNoteEl.textContent = `Similar recent sales had a typical (median) value near ${formatMoney(
         summary.median_ppsf,
       )} per sq ft.`;
     } else {
@@ -740,17 +1027,36 @@ async function analyzeSelectedListing() {
 
     // Render comps table.
     compsBody.innerHTML = "";
+    const fullSetCount = toNumberOrNull(summary.total_comps_considered);
+    if (compsNoteEl && fullSetCount != null && fullSetCount > 0) {
+      compsNoteEl.textContent = `These summary numbers use ${fullSetCount} matching sales. The table shows up to ${
+        comps.length
+      } closest matches for quick review.`;
+    } else if (compsNoteEl && comps.length) {
+      compsNoteEl.textContent = `Showing ${comps.length} closest matching sales.`;
+    }
+    const compQ = qualityFromCount(fullSetCount ?? summary.num_comps, 35, 12);
+    setQualityChip(
+      "listing_comp_confidence",
+      `${compQ.label} (${fullSetCount ?? summary.num_comps} matching sales)`,
+      compQ.tone,
+    );
+    setFreshness("comps_freshness", formatFreshness());
+    renderListingTakeaways(summary, subject, carry);
     for (const c of comps) {
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td>${escapeHtml(c.full_address ?? "")}</td>
-        <td>${formatMoney(c.sale_price)}</td>
-        <td>${escapeHtml(c.bedrooms ?? "")}</td>
-        <td>${escapeHtml(c.total_baths ?? "")}</td>
-        <td>${escapeHtml(c.square_feet ?? "")}</td>
-        <td>${escapeHtml(c.settled_date ?? "")}</td>
+        <td data-label="Address">${escapeHtml(c.full_address ?? "")}</td>
+        <td data-label="Sold price">${formatMoney(c.sale_price)}</td>
+        <td data-label="Beds">${escapeHtml(c.bedrooms ?? "")}</td>
+        <td data-label="Baths">${escapeHtml(c.total_baths ?? "")}</td>
+        <td data-label="Sq ft">${escapeHtml(c.square_feet ?? "")}</td>
+        <td data-label="Sale date">${escapeHtml(formatDateShort(c.settled_date))}</td>
       `;
       compsBody.appendChild(tr);
+    }
+    if (!comps.length) {
+      renderEmptyTableRow(compsBody, 6, "No comparable sales are available to display.");
     }
   } catch (err) {
     priceVsEl.textContent = "";
@@ -758,8 +1064,18 @@ async function analyzeSelectedListing() {
     ppsfEl.textContent = "";
     ppsfNoteEl.textContent = "";
     payEl.textContent = "";
-    payNoteEl.textContent = String(err.message || err);
-    compsBody.innerHTML = "";
+    payNoteEl.textContent = "We couldn't load this analysis right now. Please try again in a moment.";
+    renderEmptyTableRow(compsBody, 6, "Comparable sales are temporarily unavailable.");
+    if (compsNoteEl) compsNoteEl.textContent = "";
+    setQualityChip("listing_comp_confidence", "Comp confidence unavailable", "neutral");
+    clearListingTakeaways();
+  } finally {
+    setSkeletonState(LISTING_METRIC_IDS, false);
+    setTableSkeleton("#listing_comps_wrap", false);
+    if (analyzeBtn) {
+      analyzeBtn.disabled = false;
+      analyzeBtn.textContent = "Analyze this home";
+    }
   }
 }
 
@@ -772,13 +1088,33 @@ function clearFilters() {
 document.getElementById("searchBtn").addEventListener("click", searchListings);
 document.getElementById("clearBtn").addEventListener("click", () => {
   clearFilters();
-  searchListings();
+  markerLayer.clearLayers();
+  lastListingRows = [];
+  renderEmptyTableRow(resultsBody, 12, "Filters cleared. Add a ZIP code or town above to run a new search.");
+  renderEmptyTableRow(compBody, 6, "Add a ZIP code above to load rental benchmarks.");
+  statusEl.textContent = "Filters cleared. Start with a ZIP code or town, then click “Show homes and insights”.";
+  setFreshness("listings_freshness", "");
+  setFreshness("area_freshness", "");
+  setFreshness("rent_freshness", "");
+  setFreshness("comps_freshness", "");
+  setQualityChip("area_price_confidence", "");
+  setQualityChip("area_trend_confidence", "");
+  setQualityChip("rent_quality_chip", "");
+  setQualityChip("listing_comp_confidence", "");
+  renderTrendSparkline([]);
+  clearListingTakeaways();
+  loadAreaStatsFromMainFilters();
 });
 
-const analyzeBtn = document.getElementById("analyzeListingBtn");
 if (analyzeBtn) {
   analyzeBtn.addEventListener("click", analyzeSelectedListing);
 }
+if (listingCompsToggle) {
+  listingCompsToggle.addEventListener("toggle", () => {
+    listingCompsToggle.dataset.userTouched = "1";
+  });
+}
+window.addEventListener("resize", syncListingCompsToggleForViewport);
 
 document.getElementById("fin_product").addEventListener("change", () => {
   applyMortgagePresetToForm();
@@ -791,4 +1127,5 @@ for (const id of ["fin_down_pct", "fin_rate", "fin_term_years", "fin_insurance",
 
 applyMortgagePresetToForm();
 loadCompsFromMainFilters();
-statusEl.textContent = "Set filters and click Search Listings.";
+syncListingCompsToggleForViewport();
+statusEl.textContent = "Set your area filters, then click “Show homes and insights”.";

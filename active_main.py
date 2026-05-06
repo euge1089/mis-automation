@@ -204,11 +204,12 @@ def _clear_sign_in_violation_notice(page) -> bool:
     return False
 
 
-def _dump_search_timeout_artifacts(page, *, scraper_name: str) -> None:
+def _dump_debug_artifacts(page, *, scraper_name: str, reason: str) -> None:
     debug_dir = PROJECT_DIR / "logs" / "scraper_debug"
     debug_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    base = f"{scraper_name}_search_timeout_{stamp}"
+    safe_reason = re.sub(r"[^a-z0-9_]+", "_", reason.lower()).strip("_") or "unknown"
+    base = f"{scraper_name}_{safe_reason}_{stamp}"
     screenshot_path = debug_dir / f"{base}.png"
     html_path = debug_dir / f"{base}.html"
     meta_path = debug_dir / f"{base}.txt"
@@ -231,6 +232,10 @@ def _dump_search_timeout_artifacts(page, *, scraper_name: str) -> None:
         print(f"Saved search-timeout debug artifacts: {meta_path}")
     except Exception as exc:
         print(f"Warning: could not save timeout metadata: {exc!r}")
+
+
+def _dump_search_timeout_artifacts(page, *, scraper_name: str) -> None:
+    _dump_debug_artifacts(page, scraper_name=scraper_name, reason="search_timeout")
 
 
 def login(page, username: str, password: str):
@@ -469,6 +474,7 @@ def download_current_results(page, save_path: Path):
             print(
                 f"Download attempt {attempt}/{max_attempts} timed out waiting for file event."
             )
+            _dump_debug_artifacts(page, scraper_name="active", reason="download_timeout")
             if _detect_mls_daily_download_cap(page):
                 close_download_modal_if_open(page)
                 raise RuntimeError(
@@ -498,15 +504,29 @@ def download_current_results(page, save_path: Path):
             close_download_modal_if_open(page)
             if attempt < max_attempts:
                 # Re-open results state before retry.
-                open_results(page)
+                try:
+                    open_results(page)
+                except Exception:
+                    _dump_debug_artifacts(page, scraper_name="active", reason="results_reopen_failed")
+                    raise RuntimeError(
+                        "Download timed out and scraper could not return to Results page for retry. "
+                        "MLS may be throttling or presenting a blocking dialog."
+                    ) from exc
                 continue
             raise
         except Exception as exc:
             last_exc = exc
             print(f"Download attempt {attempt}/{max_attempts} failed: {exc!r}")
+            _dump_debug_artifacts(page, scraper_name="active", reason="download_exception")
             close_download_modal_if_open(page)
             if attempt < max_attempts:
-                open_results(page)
+                try:
+                    open_results(page)
+                except Exception:
+                    _dump_debug_artifacts(page, scraper_name="active", reason="results_reopen_failed")
+                    raise RuntimeError(
+                        "Download attempt failed and scraper could not return to Results page for retry."
+                    ) from exc
                 continue
             raise
     if last_exc:

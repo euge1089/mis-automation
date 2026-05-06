@@ -668,6 +668,7 @@ def sold_comps(
             },
             "summary": {
                 "num_comps": 0,
+                "total_comps_considered": 0,
                 "median_price": None,
                 "price_p25": None,
                 "price_p75": None,
@@ -696,6 +697,8 @@ def sold_comps(
             list_vs_median_pct = float((subject.list_price / price_median - 1) * 100)
         except ZeroDivisionError:
             list_vs_median_pct = None
+
+    total_comps_considered = int(len(df_f))
 
     # Build a simple distance metric to pick closest ~10 comps.
     def _score(row) -> float:
@@ -740,6 +743,7 @@ def sold_comps(
         },
         "summary": {
             "num_comps": int(len(df_f)),
+            "total_comps_considered": total_comps_considered,
             "median_price": price_median,
             "price_p25": price_p25,
             "price_p75": price_p75,

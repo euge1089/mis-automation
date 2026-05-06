@@ -94,7 +94,7 @@ curl -s http://127.0.0.1:8000/health
 ```
 
 (`infra/mls-api.service` in the repo widens **`StartLimitBurst`** / **`StartLimitIntervalSec`** so upgrades are less fragile.)
-3. **Match production cron** to **`infra/crontab.production.opt.txt`** (`crontab -e` as **`mlsops`**): daily **`daily-active --with-scrape --headless`** at **`02:15`**, weekly **`weekly-sold-rented --headless`** as you prefer.
+3. **Match production cron** to **`infra/crontab.production.opt.txt`** (`crontab -e` as **`mlsops`**). Current template defaults are daily **`daily-active --with-scrape --headless`** at **06:00** and weekly **`weekly-sold-rented --headless`** at **07:30 Sunday** in `TZ=America/New_York`.
 4. **Smoke test** (optional):  
    `cd /opt/mls-automation && bash scripts/run_scheduled_pipeline.sh daily-active --with-scrape --headless`  
    Log: **`logs/scheduler/daily-active_*.log`**.

@@ -61,6 +61,17 @@ def test_ops_backup_status_shape(client: TestClient) -> None:
     assert j.get("status") in ("ok", "unknown")
 
 
+def test_ops_alerts_shape(client: TestClient) -> None:
+    r = client.get("/ops/alerts")
+    assert r.status_code == 200
+    j = r.json()
+    assert "slack_configured" in j
+    assert "active_drop_threshold_pct" in j
+    assert "sold_rent_min_rows" in j
+    assert "daily_active_drop" in j
+    assert j["daily_active_drop"]["status"] in ("ok", "warn", "insufficient_data")
+
+
 def test_ops_schedule_status_shape(client: TestClient) -> None:
     r = client.get("/ops/schedule-status")
     assert r.status_code == 200

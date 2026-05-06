@@ -239,6 +239,7 @@ This repo now includes a concrete cron runner:
 
 - wrapper script: `scripts/run_scheduled_pipeline.sh`
 - cron template: `infra/cron.example`
+- production VM template: `infra/crontab.production.opt.txt`
 
 Setup:
 
@@ -257,7 +258,7 @@ Default scheduled jobs in the template:
 
 Note: `daily-active` now includes DB loading by default, so a separate scheduled `load-db` for active freshness is not required.
 
-**Production VM:** Server `crontab` is **outside Git**. After any manual cron edit, confirm `daily-active` includes **`--with-scrape`** (with **`--headless`** on servers). Without `--with-scrape`, the job only merges **existing** CSVs—no MLS login—and `pipeline.py` prints a **WARNING** to stderr at startup. Weekly jobs scrape by default unless you add **`--no-scrape`**.
+**Production VM:** Server `crontab` is **outside Git**. After any manual cron edit, confirm it still matches `infra/crontab.production.opt.txt` (or your intentional override), and confirm `daily-active` includes **`--with-scrape`** (with **`--headless`** on servers). Without `--with-scrape`, the job only merges **existing** CSVs—no MLS login—and `pipeline.py` prints a **WARNING** to stderr at startup. Weekly jobs scrape by default unless you add **`--no-scrape`**. The scheduler wrapper now emits explicit status markers (`SCHEDULER_STATUS=OK|FAILED|SKIPPED_LOCK`) to help monitoring.
 
 Hosted recommendation:
 

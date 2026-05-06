@@ -5,10 +5,10 @@
 # Playwright browsers installed (merge script runs `playwright install chromium`).
 #
 # Why `run_scheduled_pipeline.sh` instead of calling `python pipeline.py` directly?
-# - Loads `.env` into the shell as well as app code
+# - Avoids shell-sourcing `.env` (safer for special characters); Python loads `.env` via python-dotenv
 # - Single-instance lock (`.scheduler-lock`) avoids overlapping runs
 # - Full logs under `logs/scheduler/<job>_YYYY-MM-DD_HH-MM-SS.log`
-# Script prints "Run complete. Log: …" to stdout (capture with cron redirect below if you want).
+# - Emits explicit scheduler status markers (OK / FAILED / SKIPPED_LOCK) for monitoring
 
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

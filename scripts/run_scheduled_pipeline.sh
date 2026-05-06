@@ -38,6 +38,10 @@ mkdir -p "${LOG_DIR}"
 mkdir -p "${PROJECT_DIR}/logs"
 
 if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
+  TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  SKIP_MSG="SCHEDULER_STATUS=SKIPPED_LOCK timestamp=${TIMESTAMP} command=${COMMAND} lock_dir=${LOCK_DIR}"
+  echo "${SKIP_MSG}" >&2
+  echo "${SKIP_MSG}" >> "${LOG_DIR}/skipped_runs.log"
   echo "Another scheduled run is already active (${LOCK_DIR}). Exiting."
   exit 0
 fi
@@ -45,14 +49,11 @@ trap 'rmdir "${LOCK_DIR}"' EXIT
 
 TIMESTAMP="$(date +"%Y-%m-%d_%H-%M-%S")"
 LOG_FILE="${LOG_DIR}/${COMMAND}_${TIMESTAMP}.log"
+RUN_EXIT=0
 
-ENV_FILE="${PROJECT_DIR}/.env"
-if [[ -f "${ENV_FILE}" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "${ENV_FILE}"
-  set +a
-fi
+# Do not shell-source .env here. Values like MLS_PASSWORD may contain shell-special
+# characters that get expanded/altered by `source`, causing bad credentials.
+# Python entrypoints already load .env safely via python-dotenv.
 
 # Cron-friendly log flushing (otherwise Python may buffer until process exit).
 export PYTHONUNBUFFERED=1
@@ -69,8 +70,19 @@ fi
   echo "Python: ${PYTHON_BIN}"
   echo "Command: pipeline.py ${COMMAND} $*"
   cd "${PROJECT_DIR}"
-  "${PYTHON_BIN}" pipeline.py "${COMMAND}" "$@"
-  echo "=== Scheduled run complete: $(date -u +"%Y-%m-%dT%H:%M:%SZ") ==="
+  "${PYTHON_BIN}" pipeline.py "${COMMAND}" "$@" || RUN_EXIT=$?
+  if [[ "${RUN_EXIT}" -eq 0 ]]; then
+    echo "=== Scheduled run complete: $(date -u +"%Y-%m-%dT%H:%M:%SZ") status=ok ==="
+  else
+    echo "=== Scheduled run complete: $(date -u +"%Y-%m-%dT%H:%M:%SZ") status=failed exit_code=${RUN_EXIT} ==="
+  fi
 } >> "${LOG_FILE}" 2>&1
 
-echo "Run complete. Log: ${LOG_FILE}"
+if [[ "${RUN_EXIT}" -eq 0 ]]; then
+  echo "SCHEDULER_STATUS=OK log=${LOG_FILE}"
+  echo "Run complete. Log: ${LOG_FILE}"
+else
+  echo "SCHEDULER_STATUS=FAILED exit_code=${RUN_EXIT} log=${LOG_FILE}" >&2
+  echo "Run failed. Log: ${LOG_FILE}" >&2
+  exit "${RUN_EXIT}"
+fi
