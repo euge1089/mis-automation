@@ -207,6 +207,19 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/map-config")
+def map_config() -> dict[str, str]:
+    """
+    Public map settings for the buyer UI.
+
+    Set MAPBOX_ACCESS_TOKEN in the server environment to use Mapbox GL (recommended).
+    Optional MAPBOX_STYLE_URL defaults to Mapbox Streets.
+    """
+    token = os.environ.get("MAPBOX_ACCESS_TOKEN", "").strip()
+    style = os.environ.get("MAPBOX_STYLE_URL", "").strip() or "mapbox://styles/mapbox/streets-v12"
+    return {"mapbox_access_token": token, "map_style_url": style}
+
+
 @app.get("/ops", dependencies=[Depends(require_ops_auth)])
 def ops_dashboard() -> FileResponse:
     """Operations dashboard (pipeline runs)."""

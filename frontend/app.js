@@ -187,12 +187,103 @@ function finishLoadingBar() {
   });
 }
 
-const map = L.map("map").setView([42.3601, -71.0589], 9);
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 18,
-  attribution: "&copy; OpenStreetMap contributors",
-}).addTo(map);
-const markerLayer = L.featureGroup().addTo(map);
+/**
+ * Map backend: Mapbox GL when MAPBOX_ACCESS_TOKEN is set, otherwise Leaflet + OSM.
+ * @type {{ mode: "none" | "leaflet" | "mapbox", map?: any, markerLayer?: any, markers?: any[] }}
+ */
+let mapBackend = { mode: "none" };
+let mapReadyPromise = null;
+
+function updateMapNote(mode) {
+  const el = document.getElementById("map_note");
+  if (!el) return;
+  const base =
+    "Most pins come from listing coordinates. If a listing is missing coordinates, we try to place " +
+    "it by street address (which can be slightly off). Use this map as a guide, then confirm details " +
+    "in the listing.";
+  if (mode === "mapbox") {
+    el.textContent = `${base} Map © Mapbox © OpenStreetMap.`;
+  } else {
+    el.textContent = `${base} Map data © OpenStreetMap contributors.`;
+  }
+}
+
+function initMapBackend() {
+  if (!mapReadyPromise) {
+    mapReadyPromise = doInitMapBackend();
+  }
+  return mapReadyPromise;
+}
+
+async function doInitMapBackend() {
+  const container = document.getElementById("map");
+  if (!container || mapBackend.mode !== "none") {
+    return;
+  }
+
+  let cfg = { mapbox_access_token: "", map_style_url: "mapbox://styles/mapbox/streets-v12" };
+  try {
+    const res = await fetch("/api/map-config");
+    if (res.ok) {
+      cfg = { ...cfg, ...(await res.json()) };
+    }
+  } catch {
+    /* fall through to OSM */
+  }
+
+  const token = String(cfg.mapbox_access_token || "").trim();
+  const styleUrl = String(cfg.map_style_url || "mapbox://styles/mapbox/streets-v12").trim();
+
+  if (token && typeof mapboxgl !== "undefined") {
+    try {
+      mapboxgl.accessToken = token;
+      const map = new mapboxgl.Map({
+        container: "map",
+        style: styleUrl,
+        center: [-71.0589, 42.3601],
+        zoom: 9,
+      });
+      map.addControl(new mapboxgl.NavigationControl({ visualizePitch: false }), "top-right");
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("Mapbox style load timeout")), 20000);
+        map.once("load", () => {
+          clearTimeout(timer);
+          resolve();
+        });
+        map.once("error", (e) => {
+          clearTimeout(timer);
+          reject(e.error || e);
+        });
+      });
+      mapBackend = { mode: "mapbox", map, markers: [] };
+      updateMapNote("mapbox");
+      return;
+    } catch (err) {
+      console.warn("Mapbox init failed; using OpenStreetMap tiles.", err);
+      container.innerHTML = "";
+    }
+  }
+
+  const map = L.map("map").setView([42.3601, -71.0589], 9);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors",
+  }).addTo(map);
+  const markerLayer = L.featureGroup().addTo(map);
+  mapBackend = { mode: "leaflet", map, markerLayer };
+  updateMapNote("leaflet");
+}
+
+function clearMapMarkers() {
+  if (mapBackend.mode === "leaflet" && mapBackend.markerLayer) {
+    mapBackend.markerLayer.clearLayers();
+  } else if (mapBackend.mode === "mapbox" && Array.isArray(mapBackend.markers)) {
+    for (const m of mapBackend.markers) {
+      m.remove();
+    }
+    mapBackend.markers = [];
+  }
+}
 
 /** Last search results; used to refresh carry columns when financing inputs change. */
 let lastListingRows = null;
@@ -468,20 +559,41 @@ function buildCarryPopupHtml(row) {
   return html;
 }
 
-function renderMarkers(rows) {
-  markerLayer.clearLayers();
+async function renderMarkers(rows) {
+  await initMapBackend();
+  clearMapMarkers();
   let count = 0;
-  for (const row of rows) {
-    const lat = toNumberOrNull(row.latitude);
-    const lon = toNumberOrNull(row.longitude);
-    if (lat == null || lon == null) continue;
-    count += 1;
-    L.marker([lat, lon]).bindPopup(buildCarryPopupHtml(row)).addTo(markerLayer);
-  }
-  if (count > 0) {
-    const b = markerLayer.getBounds();
-    if (b.isValid()) {
-      map.fitBounds(b, { padding: [20, 20] });
+  if (mapBackend.mode === "leaflet" && mapBackend.map && mapBackend.markerLayer) {
+    for (const row of rows) {
+      const lat = toNumberOrNull(row.latitude);
+      const lon = toNumberOrNull(row.longitude);
+      if (lat == null || lon == null) continue;
+      count += 1;
+      L.marker([lat, lon]).bindPopup(buildCarryPopupHtml(row)).addTo(mapBackend.markerLayer);
+    }
+    if (count > 0) {
+      const b = mapBackend.markerLayer.getBounds();
+      if (b.isValid()) {
+        mapBackend.map.fitBounds(b, { padding: [20, 20] });
+      }
+    }
+  } else if (mapBackend.mode === "mapbox" && mapBackend.map) {
+    const bounds = new mapboxgl.LngLatBounds();
+    for (const row of rows) {
+      const lat = toNumberOrNull(row.latitude);
+      const lon = toNumberOrNull(row.longitude);
+      if (lat == null || lon == null) continue;
+      count += 1;
+      bounds.extend([lon, lat]);
+      const popup = new mapboxgl.Popup({ offset: 24 }).setHTML(buildCarryPopupHtml(row));
+      const marker = new mapboxgl.Marker().setLngLat([lon, lat]).setPopup(popup).addTo(mapBackend.map);
+      mapBackend.markers.push(marker);
+    }
+    if (count === 1) {
+      const c = bounds.getCenter();
+      mapBackend.map.jumpTo({ center: c, zoom: 13 });
+    } else if (count > 1) {
+      mapBackend.map.fitBounds(bounds, { padding: 50, maxZoom: 14, duration: 0 });
     }
   }
 }
@@ -539,7 +651,7 @@ async function geocodeMissingPins(rows, onBarPct) {
           row.longitude = u.longitude;
         }
       }
-      renderMarkers(rows);
+      await renderMarkers(rows);
     } catch (err) {
       hideLoadingBar();
       statusEl.textContent =
@@ -824,10 +936,10 @@ async function loadAreaStatsFromMainFilters() {
   }
 }
 
-function refreshListingDisplays() {
+async function refreshListingDisplays() {
   if (lastListingRows) {
     renderListings(lastListingRows);
-    renderMarkers(lastListingRows);
+    await renderMarkers(lastListingRows);
   }
 }
 
@@ -847,7 +959,7 @@ async function searchListings() {
       6,
       "Add a ZIP code above to load rental benchmarks. Next step: start with one ZIP, then refine bedrooms.",
     );
-    markerLayer.clearLayers();
+    clearMapMarkers();
     lastListingRows = [];
     setFreshness("listings_freshness", "");
     return;
@@ -869,7 +981,7 @@ async function searchListings() {
     setLoadingBarPercent(22);
     lastListingRows = rows;
     renderListings(rows);
-    renderMarkers(rows);
+    await renderMarkers(rows);
     statusEl.textContent = `Loaded ${rows.length} listings (${countPins(rows)} on map).`;
     setFreshness("listings_freshness", formatFreshness());
 
@@ -1146,7 +1258,7 @@ function clearFilters() {
 document.getElementById("searchBtn").addEventListener("click", searchListings);
 document.getElementById("clearBtn").addEventListener("click", () => {
   clearFilters();
-  markerLayer.clearLayers();
+  clearMapMarkers();
   lastListingRows = [];
   renderEmptyTableRow(resultsBody, 12, "Filters cleared. Add a ZIP code or town above to run a new search.");
   renderEmptyTableRow(compBody, 6, "Add a ZIP code above to load rental benchmarks.");
@@ -1176,14 +1288,18 @@ window.addEventListener("resize", syncListingCompsToggleForViewport);
 
 document.getElementById("fin_product").addEventListener("change", () => {
   applyMortgagePresetToForm();
-  refreshListingDisplays();
+  void refreshListingDisplays();
 });
 
 for (const id of ["fin_down_pct", "fin_rate", "fin_term_years", "fin_insurance", "fin_misc"]) {
-  document.getElementById(id).addEventListener("input", refreshListingDisplays);
+  document.getElementById(id).addEventListener("input", () => void refreshListingDisplays());
 }
 
-applyMortgagePresetToForm();
-loadCompsFromMainFilters();
-syncListingCompsToggleForViewport();
-statusEl.textContent = "Set your area filters, then click “Show homes and insights”.";
+initMapBackend()
+  .catch((err) => console.warn("Map init:", err))
+  .finally(() => {
+    applyMortgagePresetToForm();
+    loadCompsFromMainFilters();
+    syncListingCompsToggleForViewport();
+    statusEl.textContent = "Set your area filters, then click “Show homes and insights”.";
+  });
