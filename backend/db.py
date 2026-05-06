@@ -9,8 +9,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
 # Load repo-root `.env` so DATABASE_URL / MLS_* work without typing exports in the terminal.
+# `override=True`: systemd's EnvironmentFile can leave a key present but empty if a line is
+# misparsed; without override, python-dotenv would not fix it and secrets like MAPBOX_* stay blank.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(_PROJECT_ROOT / ".env")
+load_dotenv(_PROJECT_ROOT / ".env", override=True)
 
 _DEFAULT_LOCAL_DOCKER = "postgresql+psycopg://mls_user:mls_pass@localhost:5432/mls_analytics"
 
