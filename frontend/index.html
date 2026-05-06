@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- If the buyer page cannot load data but /ops works, the HTML may be served from a different host than the API. Set data-api-base on <html> to your API origin (no trailing slash) and add MLS_ALLOWED_ORIGINS in server .env. -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -328,6 +329,6 @@
       crossorigin=""
     ></script>
     <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
-    <script src="/static/app.js?v=20260339"></script>
+    <script src="/static/app.js?v=20260506"></script>
   </body>
 </html>

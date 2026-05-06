@@ -1,4 +1,22 @@
 const statusEl = document.getElementById("status");
+
+/**
+ * API root for fetches. Empty = same origin (normal when FastAPI serves this HTML).
+ * If the page is hosted separately, set data-api-base on the root html element to the API origin.
+ */
+function apiBase() {
+  const fromDoc = document.documentElement?.dataset?.apiBase?.trim();
+  if (fromDoc) return fromDoc.replace(/\/$/, "");
+  const g = typeof window.__MLS_API_BASE__ === "string" ? window.__MLS_API_BASE__.trim() : "";
+  if (g) return g.replace(/\/$/, "");
+  return "";
+}
+
+function apiUrl(path) {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  const b = apiBase();
+  return b ? `${b}${p}` : p;
+}
 const loadingBarWrap = document.getElementById("loadingBarWrap");
 const loadingBarFill = document.getElementById("loadingBarFill");
 const resultsBody = document.querySelector("#resultsTable tbody");
@@ -223,7 +241,7 @@ async function doInitMapBackend() {
 
   let cfg = { mapbox_access_token: "", map_style_url: "mapbox://styles/mapbox/streets-v12" };
   try {
-    const res = await fetch("/api/map-config");
+    const res = await fetch(apiUrl("/api/map-config"));
     if (res.ok) {
       cfg = { ...cfg, ...(await res.json()) };
     }
@@ -634,7 +652,7 @@ async function geocodeMissingPins(rows, onBarPct) {
       `Still loading… placing listings on the map (${progress} of ${totalThisRun}). ` +
       `We're looking up addresses online—this usually takes under a minute.`;
     try {
-      const res = await fetch("/geocode/active-listings", {
+      const res = await fetch(apiUrl("/geocode/active-listings"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mls_ids: batch }),
@@ -696,7 +714,7 @@ async function loadCompsFromMainFilters() {
 
   try {
     setTableSkeleton("#rent_table_wrap", true);
-    const res = await fetch(`/analytics/rent-by-zip-bedroom?${params.toString()}`);
+    const res = await fetch(apiUrl(`/analytics/rent-by-zip-bedroom?${params.toString()}`));
     if (!res.ok) throw new Error("We couldn't load rental benchmarks right now.");
     const rows = await res.json();
     compBody.innerHTML = "";
@@ -784,7 +802,7 @@ async function loadAreaStatsFromMainFilters() {
   try {
     setSkeletonState(AREA_METRIC_IDS, true);
     async function fetchAreaStats(localParams) {
-      const res = await fetch(`/sold-area-stats?${localParams.toString()}`);
+      const res = await fetch(apiUrl(`/sold-area-stats?${localParams.toString()}`));
       if (!res.ok) throw new Error(`Area stats failed (${res.status})`);
       return await res.json();
     }
@@ -975,7 +993,7 @@ async function searchListings() {
     // Load area stats first so we can talk about “what’s normal” for this area.
     await loadAreaStatsFromMainFilters();
 
-    const res = await fetch(`/active-listings?${params.toString()}`);
+    const res = await fetch(apiUrl(`/active-listings?${params.toString()}`));
     if (!res.ok) throw new Error(`Failed to load listings (${res.status})`);
     const rows = await res.json();
     setLoadingBarPercent(22);
@@ -1015,7 +1033,13 @@ async function searchListings() {
     }
   } catch (err) {
     hideLoadingBar();
-    statusEl.textContent = "We couldn't load homes right now. Please try again in a moment.";
+    const msg = err && err.message ? String(err.message) : "";
+    const net =
+      /load failed|failed to fetch|networkerror|cannot connect/i.test(msg) ||
+      (typeof TypeError !== "undefined" && err instanceof TypeError);
+    statusEl.textContent = net
+      ? "We could not reach the API from this page. Open the buyer tool from the same address as the server (for example your tunnel to port 8000), or set data-api-base on the page to your API URL."
+      : "We couldn't load homes right now. Please try again in a moment.";
   } finally {
     if (searchBtn) searchBtn.disabled = false;
     setTableSkeleton("#results_table_wrap", false);
@@ -1076,7 +1100,7 @@ async function analyzeSelectedListing() {
     }
     async function fetchListingComps(monthsBack = 12) {
       const res = await fetch(
-        `/sold-comps?mls_id=${encodeURIComponent(mlsId)}&months_back=${monthsBack}`,
+        apiUrl(`/sold-comps?mls_id=${encodeURIComponent(mlsId)}&months_back=${monthsBack}`),
       );
       if (!res.ok) throw new Error("We couldn't load similar recent sales right now.");
       return await res.json();

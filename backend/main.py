@@ -8,6 +8,7 @@ from collections import Counter
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import and_, case, desc, func, inspect, select, text
@@ -192,6 +193,16 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="MLS Analytics API", version="0.1.0", lifespan=lifespan)
 
+_cors_raw = os.environ.get("MLS_ALLOWED_ORIGINS", "").strip()
+_cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
