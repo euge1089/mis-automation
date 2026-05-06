@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/styles.css?v=20260336" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260507" />
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -244,8 +244,8 @@
       <p class="note fin-rate-hint" id="fin_preset_hint"></p>
     </section>
 
-    <section class="layout">
-      <div class="panel">
+    <section class="layout layout--map-then-rent">
+      <div class="panel panel--map-full">
         <h2>Map View</h2>
         <div id="map"></div>
         <p class="note" id="map_note">
@@ -254,23 +254,23 @@
           in the listing.
         </p>
       </div>
-      <div class="panel">
+      <div class="panel panel--rent-benchmarks">
         <h2>
           Rental benchmarks (recent leases)
           <span id="rent_freshness" class="freshness-badge"></span>
         </h2>
-        <p class="note comp-hint">Filtered by ZIP and bedroom range above (updates when you search).</p>
-        <p class="note" id="rent_confidence_note">
-          Confidence is based on how many recent rentals were available: high = many, medium = some, low = only a few.
+        <p class="note note--rent-intro" id="rent_intro_note">
+          Filtered by ZIP and bedroom range above (updates when you search). Confidence reflects sample size:
+          high = many recent leases, medium = some, low = only a few.
         </p>
         <p id="rent_quality_chip" class="metric-chip-row"></p>
-        <details class="why-matters">
+        <details class="why-matters why-matters--tight">
           <summary>Why this matters</summary>
           <p class="note">
             Even if you plan to live in the home, rental benchmarks help estimate downside protection and resale flexibility.
           </p>
         </details>
-        <div id="rent_table_wrap" class="table-wrap comp-table-scroll">
+        <div id="rent_table_wrap" class="table-wrap comp-table-scroll comp-table-scroll--rent">
           <table id="compTable">
             <thead>
               <tr>
