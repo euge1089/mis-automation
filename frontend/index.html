@@ -1,326 +1,574 @@
 <!doctype html>
-<!-- If the buyer page cannot load data but /ops works, the HTML may be served from a different host than the API. Set data-api-base on <html> to your API origin (no trailing slash) and add MLS_ALLOWED_ORIGINS in server .env. -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Homebuyer Price &amp; Payment Guide (Demo)</title>
+    <title>Mattie Realty Insights — Homebuyer Price &amp; Payment Guide</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/styles.css?v=20260507" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260507a" />
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
       crossorigin=""
     />
-    <link
-      href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css"
-      rel="stylesheet"
-    />
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet" />
   </head>
   <body>
-    <header class="site-header">
-      <div class="site-header__content">
-        <div class="site-header__titles">
-          <p class="site-header__eyebrow">For homebuyers</p>
-          <h1 class="site-header__title">Homebuyer Price &amp; Payment Guide</h1>
-          <p class="site-header__lede">
-            See what homes like yours actually sell for, how today’s asking prices compare, and what a monthly payment might look like — in plain English, without the jargon.
-          </p>
-        </div>
-        <div class="site-header__aside">
-          <span class="badge">Demo</span>
-          <span class="site-header__version">v1</span>
-        </div>
+    <header class="app-top-nav">
+      <div class="app-top-nav__inner">
+        <a href="#" class="app-brand" aria-current="page">
+          <span class="app-brand__icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 10.5L12 4l8 6.5V20a1 1 0 01-1 1h-5v-6H10v6H5a1 1 0 01-1-1v-9.5z" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span class="app-brand__text">Mattie Realty Insights</span>
+        </a>
+        <nav class="app-top-nav__nav" aria-label="Primary">
+          <span class="nav-pill nav-pill--active">Search</span>
+        </nav>
       </div>
     </header>
 
     <main class="app-main">
-    <section class="filters">
-      <h2>Where are you looking?</h2>
-      <p class="note">
-        Start with an area you care about. We’ll show you what similar homes have actually sold for recently, then pull in active listings that match those filters. You can always narrow things down later.
-      </p>
-      <div class="grid">
-        <label>ZIP code (5 digits) <input id="zip_code" type="text" placeholder="02116" /></label>
-        <label>Town or city <input id="town" type="text" placeholder="Boston" /></label>
-        <label>Min list price ($) <input id="min_price" type="number" placeholder="500000" /></label>
-        <label>Max list price ($) <input id="max_price" type="number" placeholder="1500000" /></label>
-        <label>Min bedrooms <input id="min_beds" type="number" step="0.5" placeholder="2" /></label>
-        <label>Max bedrooms <input id="max_beds" type="number" step="0.5" placeholder="4" /></label>
-      </div>
-      <p class="note">
-        Tip: enter at least a ZIP code or town so results stay focused on the area you care about.
-      </p>
-      <div class="actions">
-        <button id="searchBtn">Show homes and insights</button>
-        <button id="clearBtn" class="secondary">Clear</button>
-      </div>
-      <div id="status" class="status"></div>
-      <div
-        id="loadingBarWrap"
-        class="loading-bar-wrap"
-        hidden
-        role="progressbar"
-        aria-valuemin="0"
-        aria-valuemax="100"
-        aria-valuenow="0"
-        aria-label="Search progress"
-      >
-        <div class="loading-bar-track">
-          <div id="loadingBarFill" class="loading-bar-fill"></div>
+      <section class="page-hero">
+        <div class="page-hero__grid">
+          <div class="page-hero__copy">
+            <h1 class="page-hero__title">Homebuyer Price &amp; Payment Guide</h1>
+            <p class="page-hero__subtitle">
+              See what homes like yours actually sold for, how today’s asking prices compare, and what a monthly payment might look like.
+            </p>
+          </div>
+          <aside class="trust-callout">
+            <span class="trust-callout__icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path d="M12 3l8 4v5c0 5-3.5 9.5-8 11-4.5-1.5-8-6-8-11V7l8-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <div>
+              <strong>Private &amp; for your use only</strong>
+              <p>Data is pulled from MLS sources and updated frequently.</p>
+            </div>
+          </aside>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section class="panel" id="areaInsights">
-      <h2>
-        Area snapshot (recent sales)
-        <span id="area_freshness" class="freshness-badge"></span>
-      </h2>
-      <p class="note" id="area_note">
-        Enter a ZIP (and optionally town and bedrooms) above, then click “Show homes and insights”.
-        We’ll look at roughly the last year of similar sales in that area.
-      </p>
-      <div class="grid area-summary">
-        <div>
-          <h3>Typical sold price</h3>
-          <p id="area_price_main" class="stat-large"></p>
-          <p id="area_price_range" class="note"></p>
-          <p id="area_price_confidence" class="metric-chip-row"></p>
-          <details class="why-matters">
-            <summary>Why this matters</summary>
-            <p class="note">
-              This helps you avoid overpaying by showing what similar homes actually closed for in this area.
-            </p>
-          </details>
+      <section class="panel panel--search" aria-label="Search listings">
+        <div class="panel__title-row">
+          <h2 class="panel__title">Where are you looking?</h2>
         </div>
-        <div>
-          <h3>Price per square foot</h3>
-          <p id="area_ppsf" class="stat-large"></p>
-          <p class="note">Only shown when enough homes report their size.</p>
-          <details class="why-matters">
-            <summary>Why this matters</summary>
-            <p class="note">
-              Price per square foot helps compare homes of different sizes on a more apples-to-apples basis.
-            </p>
-          </details>
-        </div>
-        <div>
-          <h3>Recent sales activity</h3>
-          <p id="area_volume" class="stat-large"></p>
-          <p id="area_trend_summary" class="note"></p>
-          <p id="area_trend_confidence" class="metric-chip-row"></p>
-          <div id="area_trend_sparkline" class="sparkline-wrap" aria-label="Recent sales trend chart"></div>
-          <details class="why-matters">
-            <summary>Why this matters</summary>
-            <p class="note">
-              This gives quick market context so you can see if prices have generally been rising, flat, or easing.
-            </p>
-          </details>
-        </div>
-        <div>
-          <h3>Current asking prices</h3>
-          <p id="area_active_summary" class="stat-large"></p>
-          <p id="area_active_note" class="note"></p>
-        </div>
-      </div>
-    </section>
 
-    <section class="panel" id="listingInsights">
-      <h2>
-        Check a specific home
-        <span id="comps_freshness" class="freshness-badge"></span>
-      </h2>
-      <p class="note">
-        After you run a search, pick one of the homes below to see how its asking price compares to what similar places nearby have actually sold for, plus a rough monthly payment.
-      </p>
-      <div class="grid">
-        <label>
-          Choose a home from your search
-          <select id="listing_select">
-            <option value="">Run a search above, then pick a home…</option>
-          </select>
-        </label>
-        <div class="actions">
-          <button id="analyzeListingBtn">Analyze this home</button>
+        <div class="search-panel__lead">
+          <p class="search-panel__lead-line">Enter a ZIP code or town to start.</p>
+          <p class="search-panel__lead-line search-panel__lead-line--soft">
+            Add optional filters to narrow your results. You can enter a custom price range.
+          </p>
         </div>
-      </div>
-      <div class="listing-insights">
-        <h3 id="listing_headline"></h3>
-        <p class="note" id="listing_subheadline"></p>
-        <div class="grid">
-          <div>
-            <h4>Price vs similar recent sales</h4>
-            <p id="listing_price_vs_area" class="stat-large"></p>
-            <p id="listing_price_band" class="note"></p>
-          </div>
-          <div>
-            <h4>Price per square foot</h4>
-            <p id="listing_ppsf" class="stat-large"></p>
-            <p id="listing_ppsf_note" class="note"></p>
-          </div>
-          <div>
-            <h4>Estimated monthly payment</h4>
-            <p id="listing_payment" class="stat-large"></p>
-            <p id="listing_payment_note" class="note"></p>
-            <details class="why-matters">
-              <summary>Why this matters</summary>
-              <p class="note">
-                Monthly cost is often the real budget constraint. Use this as a planning estimate before talking with your lender.
-              </p>
-            </details>
+
+        <div class="search-panel__primary">
+          <div class="search-panel__grid search-panel__grid--primary">
+            <label class="field field--search">
+              <span class="field__label">ZIP code</span>
+              <input
+                id="zip_code"
+                class="search-input"
+                type="text"
+                inputmode="numeric"
+                autocomplete="postal-code"
+                placeholder="e.g. 02043"
+                maxlength="10"
+                aria-required="true"
+              />
+            </label>
+            <label class="field field--search">
+              <span class="field__label">Town or city</span>
+              <input id="town" class="search-input" type="text" autocomplete="address-level2" placeholder="e.g. Boston" />
+            </label>
           </div>
         </div>
-        <div id="listing_takeaways" class="takeaways-panel" hidden>
-          <h4>Key takeaways</h4>
-          <ul id="listing_takeaways_list"></ul>
+
+        <div class="search-panel__secondary">
+          <p class="search-panel__group-label">Optional filters</p>
+          <div class="search-panel__grid search-panel__grid--secondary">
+            <label class="field field--search">
+              <span class="field__label">Min price</span>
+              <input
+                id="min_price"
+                class="search-input search-input--price"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="Any"
+                aria-describedby="price_presets_hint"
+                list="price_presets_list"
+              />
+            </label>
+            <label class="field field--search">
+              <span class="field__label">Max price</span>
+              <input
+                id="max_price"
+                class="search-input search-input--price"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="Any"
+                list="price_presets_list"
+              />
+            </label>
+            <label class="field field--search">
+              <span class="field__label">Beds</span>
+              <select id="beds_filter" class="search-input search-select" aria-label="Minimum bedrooms">
+                <option value="">Any</option>
+                <option value="1">1+</option>
+                <option value="2">2+</option>
+                <option value="3">3+</option>
+                <option value="4">4+</option>
+                <option value="5">5+</option>
+              </select>
+            </label>
+          </div>
+          <p id="price_presets_hint" class="search-panel__preset-hint">
+            Type any amount, or pick a suggestion. Examples: 400000, 725000, 1125000.
+          </p>
         </div>
-        <details id="listing_comps_toggle" class="listing-comps-toggle" open>
-          <summary>Comparable recent sales</summary>
-          <div id="listing_comps_wrap" class="table-wrap listing-comps-table">
-            <p class="note" id="listing_comps_note"></p>
-            <p id="listing_comp_confidence" class="metric-chip-row"></p>
-            <table>
+
+        <datalist id="price_presets_list">
+          <option value="200000"></option>
+          <option value="250000"></option>
+          <option value="300000"></option>
+          <option value="350000"></option>
+          <option value="400000"></option>
+          <option value="450000"></option>
+          <option value="500000"></option>
+          <option value="600000"></option>
+          <option value="750000"></option>
+          <option value="900000"></option>
+          <option value="1000000"></option>
+          <option value="1250000"></option>
+          <option value="1500000"></option>
+          <option value="2000000"></option>
+          <option value="2500000"></option>
+          <option value="3000000"></option>
+          <option value="4000000"></option>
+          <option value="5000000"></option>
+        </datalist>
+
+        <div class="search-actions">
+          <button type="button" id="searchBtn" class="search-btn-primary">Show homes and insights</button>
+          <button type="button" id="clearBtn" class="secondary ghost search-btn-secondary">Clear all</button>
+        </div>
+        <div id="searchValidation" class="search-validation" role="alert" hidden></div>
+        <div id="status" class="status" role="status"></div>
+        <div
+          id="loadingBarWrap"
+          class="loading-bar-wrap"
+          hidden
+          role="progressbar"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+          aria-label="Search progress"
+        >
+          <div class="loading-bar-track">
+            <div id="loadingBarFill" class="loading-bar-fill"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="preSearchOnboarding" class="onboarding-card">
+        <div class="onboarding-card__inner">
+          <h2 class="onboarding-card__title">Start with an area</h2>
+          <p class="onboarding-card__text">
+            Enter a <strong>ZIP code</strong> or <strong>town</strong> to see active homes, recent sales, estimated payments, and rental benchmarks.
+          </p>
+        </div>
+      </section>
+
+      <div id="resultsFlow" class="results-flow" hidden>
+        <section class="panel" id="areaInsights">
+          <div class="panel__title-row">
+            <h2 class="panel__title">Area snapshot</h2>
+          </div>
+          <p class="note section-lede" id="area_note">
+            Sold-price context for your filters loads here after you search.
+          </p>
+          <div id="area_snapshot_compact" class="area-snapshot-compact" hidden role="status">
+            <p id="area_snapshot_compact_text" class="area-snapshot-compact__text"></p>
+          </div>
+          <div id="area_metric_grid" class="metric-grid">
+            <article class="metric-card metric-card--green">
+              <div class="metric-card__top">
+                <span class="metric-card__icon" aria-hidden="true">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2v20M17 7l-5-5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </span>
+                <h3 class="metric-card__label">Typical sold price</h3>
+              </div>
+              <p id="area_price_main" class="metric-card__value stat-large"></p>
+              <p id="area_price_range" class="metric-card__hint"></p>
+              <p id="area_price_confidence" class="metric-chip-row"></p>
+            </article>
+            <article class="metric-card metric-card--blue">
+              <div class="metric-card__top">
+                <span class="metric-card__icon" aria-hidden="true">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M8 12h8M12 8v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </span>
+                <h3 class="metric-card__label">Price per sq ft</h3>
+              </div>
+              <p id="area_ppsf" class="metric-card__value stat-large"></p>
+              <p class="metric-card__hint static-hint">Only shown when enough homes report their size.</p>
+            </article>
+            <article class="metric-card metric-card--violet">
+              <div class="metric-card__top">
+                <span class="metric-card__icon" aria-hidden="true">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 19h16M6 16l4-8 4 5 4-9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                <h3 class="metric-card__label">Recent sales activity</h3>
+              </div>
+              <p id="area_volume" class="metric-card__value stat-large"></p>
+              <p id="area_trend_summary" class="metric-card__hint"></p>
+              <p id="area_trend_confidence" class="metric-chip-row"></p>
+              <div id="area_trend_sparkline" class="sparkline-wrap" aria-label="Recent sales trend chart"></div>
+            </article>
+            <article class="metric-card metric-card--amber">
+              <div class="metric-card__top">
+                <span class="metric-card__icon" aria-hidden="true">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 21h16M6 16h12M8 11h8M10 6h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </span>
+                <h3 class="metric-card__label">Current asking prices</h3>
+              </div>
+              <p id="area_active_summary" class="metric-card__value stat-large"></p>
+              <p id="area_active_note" class="metric-card__hint"></p>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel panel--map panel--map-full">
+          <div class="panel__title-row">
+            <h2 class="panel__title">Map of active listings</h2>
+          </div>
+          <div id="map" class="map-surface" aria-label="Map of listings matching your search"></div>
+          <p class="note map-footnote map-footnote--muted" id="map_note"></p>
+        </section>
+
+        <section class="panel panel--preview-listings">
+          <div class="panel__title-row">
+            <h2 class="panel__title">Browse active listings</h2>
+          </div>
+          <p class="note">
+            Click a row to select a home, or tap <strong>Analyze</strong> for the full deal breakdown below.
+          </p>
+          <div id="results_preview_wrap" class="table-wrap table-wrap--preview">
+            <table id="resultsPreviewTable">
               <thead>
                 <tr>
                   <th>Address</th>
-                  <th>Sold price</th>
-                  <th>Beds</th>
-                  <th>Baths</th>
-                  <th>Sqft</th>
-                  <th>Sale date</th>
+                  <th>Town</th>
+                  <th>Price</th>
+                  <th>Beds / baths</th>
+                  <th>Sq ft</th>
+                  <th>Insight</th>
+                  <th class="th-action">Analyze</th>
                 </tr>
               </thead>
-              <tbody id="listing_comps_body"></tbody>
+              <tbody id="resultsPreviewBody"></tbody>
             </table>
           </div>
-        </details>
-      </div>
-    </section>
+          <button type="button" id="toggleFullListings" class="link-button" hidden aria-expanded="false">
+            See all active listings
+          </button>
+        </section>
 
-    <section class="filters financing-section">
-      <h2>Financing (monthly carry estimates)</h2>
-      <p class="note">
-        If you plan to pay cash, you can skip this section. For mortgages, property tax uses the annual tax amount from listing data when available (shown monthly). Insurance and HOA/other costs are your own estimates. Rates below are <strong>illustrative</strong>—replace APR with a real lender quote. Not financial advice; does not include PMI, closing costs, or one-time fees.
-      </p>
-      <div class="grid">
-        <label>
-          Down payment %
-          <input id="fin_down_pct" type="number" value="20" min="0" max="100" step="1" />
-        </label>
-        <label>
-          Mortgage product
-          <select id="fin_product">
-            <option value="30fixed">30-year fixed</option>
-            <option value="15fixed">15-year fixed</option>
-            <option value="71arm">7/1 ARM (30-yr amort.)</option>
-            <option value="51arm">5/1 ARM (30-yr amort.)</option>
-            <option value="custom">Custom term</option>
-          </select>
-        </label>
-        <label>
-          Interest rate (APR %)
-          <input id="fin_rate" type="number" value="6.5" min="0" max="25" step="0.125" />
-        </label>
-        <label>
-          Loan term (years)
-          <input id="fin_term_years" type="number" value="30" min="1" max="40" step="1" />
-        </label>
-        <label>
-          Monthly insurance ($)
-          <input id="fin_insurance" type="number" value="0" min="0" step="50" placeholder="150" />
-        </label>
-        <label>
-          Monthly HOA/other ($)
-          <input id="fin_misc" type="number" value="0" min="0" step="25" placeholder="HOA, maintenance, etc." />
-        </label>
-      </div>
-      <p class="note fin-rate-hint" id="fin_preset_hint"></p>
-    </section>
-
-    <section class="layout layout--map-then-rent">
-      <div class="panel panel--map-full">
-        <h2>Map View</h2>
-        <div id="map"></div>
-        <p class="note" id="map_note">
-          Most pins come from listing coordinates. If a listing is missing coordinates, we try to place
-          it by street address (which can be slightly off). Use this map as a guide, then confirm details
-          in the listing.
-        </p>
-      </div>
-      <div class="panel panel--rent-benchmarks">
-        <h2>
-          Rental benchmarks (recent leases)
-          <span id="rent_freshness" class="freshness-badge"></span>
-        </h2>
-        <p class="note note--rent-intro" id="rent_intro_note">
-          Filtered by ZIP and bedroom range above (updates when you search). Confidence reflects sample size:
-          high = many recent leases, medium = some, low = only a few.
-        </p>
-        <p id="rent_quality_chip" class="metric-chip-row"></p>
-        <details class="why-matters why-matters--tight">
-          <summary>Why this matters</summary>
-          <p class="note">
-            Even if you plan to live in the home, rental benchmarks help estimate downside protection and resale flexibility.
+        <section class="panel panel--listing listing-insights" id="listingInsights">
+          <div class="panel__title-row">
+            <h2 class="panel__title">Selected home analysis</h2>
+          </div>
+          <p id="listingInsightsLead" class="lead-text listing-insights-lead">
+            Pick a listing from the table above or the dropdown, then click <strong>Analyze this home</strong> for a full deal breakdown (comps, payment, takeaways).
           </p>
-        </details>
-        <div id="rent_table_wrap" class="table-wrap comp-table-scroll comp-table-scroll--rent">
-          <table id="compTable">
-            <thead>
-              <tr>
-                <th>ZIP</th>
-                <th>Beds</th>
-                <th>Typical rent (median)</th>
-                <th>Average rent</th>
-                <th>Recent rentals</th>
-                <th>Confidence level</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
+          <div class="picker-row">
+            <label class="field field--grow">
+              <span class="field__label">Choose a home</span>
+              <select id="listing_select">
+                <option value="">Select from your search results…</option>
+              </select>
+            </label>
+            <div class="picker-row__btn">
+              <button type="button" id="analyzeListingBtn">Analyze this home</button>
+            </div>
+          </div>
 
-    <section class="panel">
-      <h2>
-        Homes for sale that match your filters
-        <span id="listings_freshness" class="freshness-badge"></span>
-      </h2>
-      <p class="note">Use this list to shortlist homes, then use “Check a specific home” above for deeper comparison.</p>
-      <div id="results_table_wrap" class="table-wrap">
-        <table id="resultsTable">
-          <thead>
-            <tr>
-              <th>Listing ID</th>
-              <th>Address</th>
-              <th>Town</th>
-              <th>ZIP</th>
-              <th>On map?</th>
-              <th>Beds</th>
-              <th>Baths</th>
-              <th>Floorspace (sq ft)</th>
-              <th>List Price</th>
-              <th>Monthly tax</th>
-              <th>Loan payment (P&amp;I)</th>
-              <th>Est. total monthly</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+          <div id="listingSelectionHint" class="empty-panel-hint">
+            <p>Choose an address in <strong>Browse active listings</strong> (or use the menu), then analyze to compare this asking price to recent sales.</p>
+          </div>
+
+          <div id="listingAnalysisDetails" class="listing-detail-stack" hidden>
+            <div id="listing_analysis_panel" class="listing-analysis-grid">
+              <div class="property-card">
+                <div class="property-card__visual" aria-hidden="true">
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+                    <path d="M4 10.5L12 4l8 6.5V20a1 1 0 01-1 1h-5v-6H10v6H5a1 1 0 01-1-1v-9.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+                <p id="listing_prop_address" class="property-card__address"></p>
+                <p id="listing_prop_line2" class="property-card__meta"></p>
+                <span class="status-pill">Active listing</span>
+                <dl class="property-card__stats">
+                  <div><dt>List price</dt><dd id="listing_prop_price">—</dd></div>
+                  <div><dt>Beds / baths</dt><dd id="listing_prop_beds_baths">—</dd></div>
+                  <div><dt>Sq ft</dt><dd id="listing_prop_sqft">—</dd></div>
+                  <div><dt>Type</dt><dd id="listing_prop_type">—</dd></div>
+                  <div><dt>Listing ID</dt><dd id="listing_prop_mls">—</dd></div>
+                </dl>
+              </div>
+
+              <div class="insight-stack">
+                <article class="insight-card">
+                  <div class="insight-card__head">
+                    <h3 class="insight-card__title">Price vs similar recent sales</h3>
+                    <span id="listing_badge_price" class="insight-badge" hidden></span>
+                  </div>
+                  <p id="listing_price_vs_area" class="insight-card__metric stat-large"></p>
+                  <p id="listing_price_band" class="insight-card__note note"></p>
+                </article>
+                <article class="insight-card">
+                  <div class="insight-card__head">
+                    <h3 class="insight-card__title">Price per square foot</h3>
+                    <span id="listing_badge_ppsf" class="insight-badge" hidden></span>
+                  </div>
+                  <p id="listing_ppsf" class="insight-card__metric stat-large"></p>
+                  <p id="listing_ppsf_note" class="insight-card__note note"></p>
+                </article>
+                <article class="insight-card">
+                  <div class="insight-card__head">
+                    <h3 class="insight-card__title">Estimated monthly payment</h3>
+                    <span id="listing_badge_payment" class="insight-badge" hidden></span>
+                  </div>
+                  <p id="listing_payment" class="insight-card__metric stat-large"></p>
+                  <p id="listing_payment_note" class="insight-card__note note"></p>
+                </article>
+              </div>
+            </div>
+
+            <div id="listing_limitations_box" class="limitations-box" hidden>
+              <h4 class="limitations-box__title">Data confidence &amp; limitations</h4>
+              <p id="listing_limitations_text" class="limitations-box__text"></p>
+              <p id="listing_comp_confidence" class="metric-chip-row"></p>
+            </div>
+
+            <div id="listing_takeaways" class="takeaways-panel" hidden>
+              <h4 class="takeaways-panel__title">Key takeaways</h4>
+              <ul id="listing_takeaways_list"></ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel panel--financing" id="panelFinancing">
+          <div class="panel__title-row">
+            <h2 class="panel__title">Financing &amp; monthly carry</h2>
+          </div>
+          <div id="financingPlaceholder" class="financing-placeholder">
+            <p class="financing-placeholder__text">
+              <strong>Choose a home above</strong> to estimate monthly cost. Financing inputs appear once a listing is selected.
+            </p>
+          </div>
+          <div id="financingBody" class="financing-body" hidden>
+            <p class="lead-text financing-lead">
+              Estimates use the <strong>selected listing’s list price</strong>. Illustrative rates only—replace with your lender’s quote.
+            </p>
+            <div class="financing-split">
+              <div class="financing-split__controls">
+                <h3 class="fin-subheading">Assumptions</h3>
+                <div class="grid grid--fin">
+                  <label class="field">
+                    <span class="field__label">Down payment %</span>
+                    <input id="fin_down_pct" type="number" value="20" min="0" max="100" step="1" />
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Mortgage product</span>
+                    <select id="fin_product">
+                      <option value="30fixed">30-year fixed</option>
+                      <option value="15fixed">15-year fixed</option>
+                      <option value="71arm">7/1 ARM (30-yr amort.)</option>
+                      <option value="51arm">5/1 ARM (30-yr amort.)</option>
+                      <option value="custom">Custom term</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Interest rate (APR %)</span>
+                    <input id="fin_rate" type="number" value="6.5" min="0" max="25" step="0.125" />
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Loan term (years)</span>
+                    <input id="fin_term_years" type="number" value="30" min="1" max="40" step="1" />
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Monthly insurance ($)</span>
+                    <input id="fin_insurance" type="number" value="0" min="0" step="50" placeholder="150" />
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Monthly HOA / other ($)</span>
+                    <input id="fin_misc" type="number" value="0" min="0" step="25" placeholder="HOA, maintenance" />
+                  </label>
+                </div>
+                <p class="note fin-rate-hint" id="fin_preset_hint"></p>
+              </div>
+              <aside class="carry-card" aria-live="polite">
+                <h3 class="carry-card__title">Monthly carry estimate</h3>
+                <p id="fin_carry_context" class="carry-card__context">Select a listing to estimate monthly costs.</p>
+                <p id="fin_carry_total" class="carry-card__total"></p>
+                <ul class="carry-card__lines">
+                  <li><span>Principal &amp; interest</span><span id="fin_carry_pi">—</span></li>
+                  <li><span>Property tax (est.)</span><span id="fin_carry_tax">—</span></li>
+                  <li><span>Insurance</span><span id="fin_carry_insurance">—</span></li>
+                  <li><span>HOA / other</span><span id="fin_carry_misc">—</span></li>
+                </ul>
+                <p class="carry-card__disclaimer">
+                  Illustrative only. Replace rates with your lender quote and verify taxes and insurance.
+                </p>
+              </aside>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel panel--rent">
+          <div class="panel__title-row">
+            <h2 class="panel__title">Rental benchmarks</h2>
+          </div>
+          <p class="note note--rent-intro" id="rent_intro_note">
+            Recent lease statistics for your ZIP and bedroom filters.
+            <strong>Confidence</strong> reflects sample size: high = many recent leases, medium = some, low = only a few.
+          </p>
+          <div class="section-inline-controls section-inline-controls--rent">
+            <label class="field field--inline field--lookback">
+              <span class="field__label">Rental data period</span>
+              <select id="rent_lookback" aria-label="Rental data period">
+                <option value="6">6 months</option>
+                <option value="12" selected>12 months</option>
+                <option value="24">24 months</option>
+              </select>
+            </label>
+          </div>
+          <p class="note lookback-tradeoff-hint" id="rent_lookback_hint">
+            Longer periods may be more reliable when there are only a few recent rentals.
+          </p>
+          <p class="rent-aggregate-note" id="rent_aggregate_note" aria-live="polite"></p>
+          <p class="note rent-sparse-note" id="rent_sparse_note" hidden></p>
+          <p id="rent_quality_chip" class="metric-chip-row"></p>
+          <div id="rent_table_wrap" class="table-wrap comp-table-scroll comp-table-scroll--rent">
+            <table id="compTable">
+              <thead>
+                <tr>
+                  <th>ZIP</th>
+                  <th>Beds</th>
+                  <th>Typical rent</th>
+                  <th>Average rent</th>
+                  <th>Recent rentals</th>
+                  <th>Confidence</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel panel--comps" id="panelComps" hidden>
+          <div class="comps-block comps-block--standalone">
+            <div class="panel__title-row">
+              <h2 class="panel__title">Comparable recent sales</h2>
+            </div>
+            <p class="lead-text subtle-lead">Shown after you analyze a home. Matches use ZIP, bedrooms, square footage band, and lookback—not miles.</p>
+            <div class="comps-block__head">
+              <p class="note lookback-tradeoff-hint" id="comps_lookback_hint">
+                Shorter periods reflect the current market better. Longer periods may show more matches.
+              </p>
+              <div class="comps-block__controls">
+                <label class="field field--inline field--lookback">
+                  <span class="field__label">Recent sales period</span>
+                  <select id="comps_lookback" aria-label="Recent sales period">
+                    <option value="6">6 months</option>
+                    <option value="12" selected>12 months</option>
+                    <option value="24">24 months</option>
+                    <option value="36">36 months</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <p class="comps-sample-line" id="listing_comps_sample_line" aria-live="polite"></p>
+            <p class="note comps-sparse-line" id="listing_comps_sparse_line" hidden></p>
+            <p class="comps-expand-row" id="listing_comps_expand_row" hidden>
+              <button type="button" class="link-button" id="listing_comps_expand_lookback_btn">
+                Expand to 24 months
+              </button>
+            </p>
+            <p class="comps-match-note" id="listing_comps_match_note">
+              Comparable sales are matched by ZIP, bedroom count, square footage range, and the period above.
+            </p>
+            <p class="note" id="listing_comps_note"></p>
+            <div id="listing_comps_wrap" class="table-wrap listing-comps-table">
+              <table id="listing_comps_table" class="comps-collapsed">
+                <thead>
+                  <tr>
+                    <th>Address</th>
+                    <th>Sold price</th>
+                    <th>Beds</th>
+                    <th>Baths</th>
+                    <th>Sq ft</th>
+                    <th>Sale date</th>
+                  </tr>
+                </thead>
+                <tbody id="listing_comps_body"></tbody>
+              </table>
+            </div>
+            <button type="button" id="listing_comps_expand" class="link-button" hidden>
+              View all matching sales
+            </button>
+          </div>
+        </section>
+
+        <section class="panel" id="fullListingsSection" hidden>
+          <div class="panel__title-row">
+            <h2 class="panel__title">All active listings (detail)</h2>
+          </div>
+          <div id="results_table_wrap" class="table-wrap">
+            <table id="resultsTable">
+              <thead>
+                <tr>
+                  <th>Listing ID</th>
+                  <th>Address</th>
+                  <th>Town</th>
+                  <th>ZIP</th>
+                  <th>On map?</th>
+                  <th>Beds</th>
+                  <th>Baths</th>
+                  <th>Sq ft</th>
+                  <th>List price</th>
+                  <th>Monthly tax</th>
+                  <th>Loan P&amp;I</th>
+                  <th>Est. total / mo</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
       </div>
-    </section>
     </main>
-    <footer class="site-footer-note">
-      <p>
-        Planning tool only. This is not an appraisal, investment advice, or a lender quote. Confirm pricing, taxes, financing, and property condition with licensed professionals.
-      </p>
+
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <span class="site-footer__brand">Mattie Realty Insights</span>
+        <span class="site-footer__sep">·</span>
+        <span>Private and confidential. For your use only.</span>
+        <span class="site-footer__sep">·</span>
+        <span class="site-footer__disc">Planning tool — not an appraisal or lender quote.</span>
+      </div>
     </footer>
 
     <script
@@ -329,6 +577,6 @@
       crossorigin=""
     ></script>
     <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
-    <script src="/static/app.js?v=20260506"></script>
+    <script src="/static/app.js?v=20260507a"></script>
   </body>
 </html>

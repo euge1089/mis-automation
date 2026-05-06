@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import secrets
+from typing import Literal
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from collections import Counter
@@ -35,6 +36,9 @@ from backend.ops_disk import disk_usage_snapshot, extended_host_metrics_if_enabl
 from backend.ops_enrichment import build_ops_run_row
 from backend.ops_logs import read_log_tail, read_run_log_excerpt
 from backend.ops_schedule import build_schedule_rows
+from backend.rent_aggregate import aggregate_rent_by_zip_bedroom_from_history
+from backend.sold_comps_logic import buyer_match_hint, pick_comp_candidates
+from backend.town_match import pandas_town_matches, town_column_matches
 from backend.schemas import (
     ActiveListingOut,
     DailyActiveDropStatusOut,
@@ -133,6 +137,19 @@ def _load_sold_df(db: Session) -> pd.DataFrame:
     df = pd.DataFrame(records)
     df["settled_dt"] = pd.to_datetime(df["settled_date"], errors="coerce", utc=True)
     return df
+
+
+def _active_subject_dict(subject: ActiveListing) -> dict:
+    z = normalize_us_zip_5(subject.zip_code)
+    return {
+        "mls_id": subject.mls_id,
+        "address": subject.full_address or subject.address,
+        "zip_code": z,
+        "bedrooms": float(subject.bedrooms) if subject.bedrooms is not None else None,
+        "total_baths": subject.total_baths,
+        "square_feet": float(subject.square_feet) if subject.square_feet is not None else None,
+        "list_price": subject.list_price,
+    }
 
 
 def _require_ops_basic_auth(request: Request) -> None:
@@ -512,8 +529,7 @@ def sold_area_stats(
         if z:
             df_f = df_f[df_f["zip_code"].astype(str).str.zfill(5) == z]
     if town:
-        t = town.strip().lower()
-        df_f = df_f[df_f["town"].astype(str).str.lower() == t]
+        df_f = df_f[pandas_town_matches(df_f["town"], town)]
 
     # Beds filter.
     beds = pd.to_numeric(df_f["bedrooms"], errors="coerce")
@@ -582,7 +598,7 @@ def sold_area_stats(
         if z:
             stmt = stmt.where(zip_column_eq_normalized(ActiveListing.zip_code, z))
     if town:
-        stmt = stmt.where(func.lower(ActiveListing.town) == town.strip().lower())
+        stmt = stmt.where(town_column_matches(ActiveListing.town, town))
     if min_beds is not None:
         stmt = stmt.where(ActiveListing.bedrooms >= float(min_beds))
     if max_beds is not None:
@@ -624,72 +640,61 @@ def sold_area_stats(
     }
 
 
+CompsLookbackMonths = Literal[6, 12, 24, 36]
+
+
 @app.get("/sold-comps")
 def sold_comps(
     mls_id: str | None = None,
-    months_back: int = 12,
+    months_back: CompsLookbackMonths = 12,
     db: Session = Depends(get_db),
 ) -> dict:
     """
     Find recent similar sales ("comps") for a specific active listing.
 
-    For now, requires an active MLS ID. Uses:
-    - same ZIP
-    - bedrooms within ±1
-    - square footage within ±30%
-    - sales within roughly the last ``months_back`` months
+    Uses ZIP + bedroom + size bands with automatic fallback (size band,
+    bedroom tolerance) within the buyer-selected lookback window.
     """
     if not mls_id:
-        return {"error": "mls_id is required"}
+        return {"error": "mls_required", "lookback_months": months_back}
 
-    # Look up subject listing from active_listings.
     subject = db.get(ActiveListing, mls_id)
     if subject is None:
-        return {"error": f"Active listing {mls_id!r} not found.", "subject": None, "summary": None, "comps": []}
+        return {
+            "error": "listing_not_found",
+            "lookback_months": months_back,
+            "subject": None,
+            "summary": None,
+            "comps": [],
+        }
 
     try:
         df = _load_sold_df(db)
-    except Exception as exc:  # pragma: no cover - simple surface
-        return {"error": str(exc), "subject": None, "summary": None, "comps": []}
+    except ValueError:
+        return {
+            "error": "sold_data_unavailable",
+            "lookback_months": months_back,
+            "subject": _active_subject_dict(subject),
+            "summary": None,
+            "comps": [],
+        }
+    except Exception:  # pragma: no cover - DB / IO
+        return {
+            "error": "sold_data_unavailable",
+            "lookback_months": months_back,
+            "subject": _active_subject_dict(subject),
+            "summary": None,
+            "comps": [],
+        }
 
-    subj_zip = normalize_us_zip_5(subject.zip_code)
+    df_pool, strat = pick_comp_candidates(df, subject, max_months_back=months_back)
     subj_beds = float(subject.bedrooms) if subject.bedrooms is not None else None
     subj_sqft = float(subject.square_feet) if subject.square_feet is not None else None
 
-    df_f = df.copy()
-    now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=30 * months_back)
-    if "settled_dt" in df_f.columns:
-        df_f = df_f[df_f["settled_dt"] >= cutoff]
-    df_f = df_f[
-        (pd.to_numeric(df_f["sale_price"], errors="coerce") > 0)
-        & (df_f.get("dataset_type") == "sold")
-    ]
-
-    if subj_zip:
-        df_f = df_f[df_f["zip_code"].astype(str).str.zfill(5) == subj_zip]
-
-    beds = pd.to_numeric(df_f["bedrooms"], errors="coerce")
-    if subj_beds is not None:
-        df_f = df_f[(beds >= subj_beds - 1.0) & (beds <= subj_beds + 1.0)]
-
-    sqft = pd.to_numeric(df_f.get("square_feet"), errors="coerce")
-    if subj_sqft is not None and subj_sqft > 0:
-        low = subj_sqft * 0.7
-        high = subj_sqft * 1.3
-        df_f = df_f[(sqft >= low) & (sqft <= high)]
-
-    if df_f.empty:
+    if df_pool.empty:
         return {
-            "subject": {
-                "mls_id": subject.mls_id,
-                "address": subject.full_address or subject.address,
-                "zip_code": subj_zip,
-                "bedrooms": subj_beds,
-                "total_baths": subject.total_baths,
-                "square_feet": subj_sqft,
-                "list_price": subject.list_price,
-            },
+            "lookback_months": months_back,
+            "subject": _active_subject_dict(subject),
             "summary": {
                 "num_comps": 0,
                 "total_comps_considered": 0,
@@ -698,19 +703,21 @@ def sold_comps(
                 "price_p75": None,
                 "median_ppsf": None,
                 "list_vs_median_pct": None,
+                "comp_match_strategy": None,
             },
             "comps": [],
+            "match_hint": None,
         }
 
-    prices = pd.to_numeric(df_f["sale_price"], errors="coerce")
-    sqft = pd.to_numeric(df_f.get("square_feet"), errors="coerce")
+    prices = pd.to_numeric(df_pool["sale_price"], errors="coerce")
+    sqft_all = pd.to_numeric(df_pool.get("square_feet"), errors="coerce")
     price_median = float(prices.median())
     price_p25 = float(prices.quantile(0.25))
     price_p75 = float(prices.quantile(0.75))
 
     median_ppsf = None
-    if not sqft.isna().all():
-        pps = prices / sqft.replace(0, pd.NA)
+    if not sqft_all.isna().all():
+        pps = prices / sqft_all.replace(0, pd.NA)
         pps = pps.replace([pd.NA, pd.NaT], pd.NA).dropna()
         if not pps.empty:
             median_ppsf = float(pps.median())
@@ -722,9 +729,8 @@ def sold_comps(
         except ZeroDivisionError:
             list_vs_median_pct = None
 
-    total_comps_considered = int(len(df_f))
+    total_comps_considered = int(len(df_pool))
 
-    # Build a simple distance metric to pick closest ~10 comps.
     def _score(row) -> float:
         score = 0.0
         sp = float(row.get("sale_price") or 0)
@@ -738,12 +744,12 @@ def sold_comps(
             score += abs(rsqft - subj_sqft) / subj_sqft
         return score
 
-    df_f = df_f.copy()
-    df_f["_score"] = df_f.apply(_score, axis=1)
-    df_f = df_f.sort_values("_score").head(10)
+    df_rank = df_pool.copy()
+    df_rank["_score"] = df_rank.apply(_score, axis=1)
+    df_rank = df_rank.sort_values("_score").head(10)
 
     comps = []
-    for _, r in df_f.iterrows():
+    for _, r in df_rank.iterrows():
         comps.append(
             {
                 "full_address": r.get("full_address") or r.get("address"),
@@ -755,26 +761,24 @@ def sold_comps(
             }
         )
 
+    match_hint = buyer_match_hint(strat)
+    strategy_label = strat.label if strat else None
+
     return {
-        "subject": {
-            "mls_id": subject.mls_id,
-            "address": subject.full_address or subject.address,
-            "zip_code": subj_zip,
-            "bedrooms": subj_beds,
-            "total_baths": subject.total_baths,
-            "square_feet": subj_sqft,
-            "list_price": subject.list_price,
-        },
+        "lookback_months": months_back,
+        "subject": _active_subject_dict(subject),
         "summary": {
-            "num_comps": int(len(df_f)),
+            "num_comps": total_comps_considered,
             "total_comps_considered": total_comps_considered,
             "median_price": price_median,
             "price_p25": price_p25,
             "price_p75": price_p75,
             "median_ppsf": median_ppsf,
             "list_vs_median_pct": list_vs_median_pct,
+            "comp_match_strategy": strategy_label,
         },
         "comps": comps,
+        "match_hint": match_hint,
     }
 
 
@@ -795,7 +799,7 @@ def list_active_listings(
     if zip_norm:
         stmt = stmt.where(zip_column_eq_normalized(ActiveListing.zip_code, zip_norm))
     if town:
-        stmt = stmt.where(func.lower(ActiveListing.town) == town.lower())
+        stmt = stmt.where(town_column_matches(ActiveListing.town, town))
     if min_price is not None:
         stmt = stmt.where(ActiveListing.list_price >= min_price)
     if max_price is not None:
@@ -891,8 +895,28 @@ def rent_by_zip_bedroom(
     bedrooms: float | None = None,
     min_beds: float | None = None,
     max_beds: float | None = None,
+    months_back: int | None = Query(
+        default=None,
+        description="If set to 6, 12, or 24, aggregate from rental history for that window. "
+        "Omit to use the prebuilt snapshot (legacy default).",
+    ),
     db: Session = Depends(get_db),
-) -> list[RentByZipBedroom]:
+) -> list[RentByZipBedroomOut]:
+    if months_back is not None:
+        if months_back not in (6, 12, 24):
+            raise HTTPException(
+                status_code=400,
+                detail="months_back must be 6, 12, or 24 when provided",
+            )
+        return aggregate_rent_by_zip_bedroom_from_history(
+            db,
+            zip_code=zip_code,
+            bedrooms=bedrooms,
+            min_beds=min_beds,
+            max_beds=max_beds,
+            months_back=months_back,
+        )
+
     stmt = select(RentByZipBedroom)
     zip_norm = normalize_us_zip_5(zip_code)
     if zip_norm:
