@@ -33,6 +33,22 @@ cd "${DEST}"
 sudo -u mlsops -H bash -c 'cd /opt/mls-automation && ./.venv/bin/python -m playwright install chromium'
 sudo systemctl restart mls-api.service
 echo "---"
-curl -s -S http://127.0.0.1:8000/health || true
+# Uvicorn needs a moment to bind; an immediate curl often fails even when the service is fine.
+health_ok=0
+for i in $(seq 1 30); do
+  if out=$(curl -sfS --max-time 2 "http://127.0.0.1:8000/health" 2>/dev/null); then
+    echo "$out"
+    echo "Health check OK (~$((i - 1))s after restart)."
+    health_ok=1
+    break
+  fi
+  sleep 1
+done
+if [[ "${health_ok}" -ne 1 ]]; then
+  echo "Health check did not succeed within 30s." >&2
+  curl -sS --max-time 2 "http://127.0.0.1:8000/health" || echo "(curl still failing — see logs below)"
+  echo "---"
+  systemctl status mls-api.service --no-pager -l || true
+fi
 echo ""
-echo "Deploy merge finished. If curl failed, check: sudo systemctl status mls-api.service"
+echo "Deploy merge finished. If health failed, check logs: journalctl -u mls-api.service -n 50 --no-pager"
