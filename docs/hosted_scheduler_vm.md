@@ -107,14 +107,14 @@ These details match the **DigitalOcean** droplet used for schedules, API, and de
 | --- | --- |
 | **Droplet name** | `mls-ops-1` |
 | **Region / image** | NYC1 · Ubuntu 24.04 LTS x64 (example size: 4 GB RAM / 80 GB disk) |
-| **Public IPv4** | `142.93.202.226` |
+| **Public IPv4** | Confirm in **DigitalOcean → Droplets** (changes if you recreate the droplet). |
 | **SSH user** | `mlsops` |
 | **App directory** | `/opt/mls-automation` |
 | **Pre-merge deploy bundle** (rsync target from laptop) | `~/mls-automation-deploy/` on the VM |
 
 After rsync, merge into `/opt` and restart the API: `infra/vm_merge_deploy.sh` (run **on the VM**).
 
-**Browser access:** the API usually listens on `127.0.0.1:8000` on the VM—use an **SSH tunnel** from your computer (`ssh -L 8000:127.0.0.1:8000 mlsops@142.93.202.226`) then open `http://127.0.0.1:8000/ops` unless you expose the port another way.
+**Browser access:** the API usually listens on `127.0.0.1:8000` on the VM—use an **SSH tunnel** from your computer (`ssh -L 8000:127.0.0.1:8000 mlsops@YOUR_DROPLET_IP`) then open `http://127.0.0.1:8000/ops` unless you expose the port another way. Replace **`YOUR_DROPLET_IP`** with your droplet’s current IPv4 from DigitalOcean.
 
 **Cron checklist (production):** `crontab` is **not** in this repo. Confirm `pipeline.py daily-active` includes **`--with-scrape`** (and usually `--headless`); omitting `--with-scrape` means **no MLS scrape**—only existing CSVs. Weekly defaults to scraping unless **`--no-scrape`** is set. After edits run `crontab -l` to verify.
 
