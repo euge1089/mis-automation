@@ -671,12 +671,46 @@ async function loadAreaStatsFromMainFilters() {
 
   try {
     setSkeletonState(AREA_METRIC_IDS, true);
-    const res = await fetch(`/sold-area-stats?${params.toString()}`);
-    if (!res.ok) throw new Error(`Area stats failed (${res.status})`);
-    const data = await res.json();
-    const summary = data.summary;
-    const trend = Array.isArray(data.trend_by_month) ? data.trend_by_month : [];
-    const active = data.current_active_snapshot;
+    async function fetchAreaStats(localParams) {
+      const res = await fetch(`/sold-area-stats?${localParams.toString()}`);
+      if (!res.ok) throw new Error(`Area stats failed (${res.status})`);
+      return await res.json();
+    }
+
+    let data = await fetchAreaStats(params);
+    let summary = data.summary;
+    let trend = Array.isArray(data.trend_by_month) ? data.trend_by_month : [];
+    let active = data.current_active_snapshot;
+    let fallbackNote = "";
+
+    if (data.error) {
+      noteEl.textContent = `We couldn't load sold comps yet: ${data.error}`;
+      priceMainEl.textContent = "";
+      priceRangeEl.textContent = "";
+      ppsfEl.textContent = "";
+      volEl.textContent = "";
+      trendSummaryEl.textContent = "";
+      activeSummaryEl.textContent = "";
+      activeNoteEl.textContent = "";
+      setQualityChip("area_price_confidence", "Area confidence unavailable", "neutral");
+      setQualityChip("area_trend_confidence", "");
+      renderTrendSparkline([]);
+      return;
+    }
+
+    if ((!summary || !summary.num_sales) && !params.has("months_back")) {
+      const expanded = new URLSearchParams(params);
+      expanded.set("months_back", "24");
+      const expandedData = await fetchAreaStats(expanded);
+      if (!expandedData.error && expandedData.summary && expandedData.summary.num_sales) {
+        data = expandedData;
+        summary = data.summary;
+        trend = Array.isArray(data.trend_by_month) ? data.trend_by_month : [];
+        active = data.current_active_snapshot;
+        fallbackNote =
+          "There were no matching sold comps in the last 12 months, so we expanded to the last 24 months for context.";
+      }
+    }
 
     if (!summary || !summary.num_sales) {
       noteEl.textContent =
@@ -697,6 +731,9 @@ async function loadAreaStatsFromMainFilters() {
 
     noteEl.textContent =
       "Based on roughly the last year of similar sales in this area. Individual homes can be above or below these ranges depending on condition, location, and features.";
+    if (fallbackNote) {
+      noteEl.textContent = `${noteEl.textContent} ${fallbackNote}`;
+    }
 
     const pMed = summary.price_median;
     const p25 = summary.price_p25;
@@ -925,9 +962,27 @@ async function analyzeSelectedListing() {
       analyzeBtn.disabled = true;
       analyzeBtn.textContent = "Analyzing…";
     }
-    const res = await fetch(`/sold-comps?mls_id=${encodeURIComponent(mlsId)}`);
-    if (!res.ok) throw new Error("We couldn't load similar recent sales right now.");
-    const data = await res.json();
+    async function fetchListingComps(monthsBack = 12) {
+      const res = await fetch(
+        `/sold-comps?mls_id=${encodeURIComponent(mlsId)}&months_back=${monthsBack}`,
+      );
+      if (!res.ok) throw new Error("We couldn't load similar recent sales right now.");
+      return await res.json();
+    }
+
+    let data = await fetchListingComps(12);
+    let expandedWindowUsed = false;
+    if (!data.error) {
+      const baseSummary = data.summary || {};
+      if (!baseSummary.num_comps) {
+        const expandedData = await fetchListingComps(24);
+        const expandedSummary = (expandedData || {}).summary || {};
+        if (!expandedData.error && expandedSummary.num_comps) {
+          data = expandedData;
+          expandedWindowUsed = true;
+        }
+      }
+    }
 
     if (data.error) {
       priceVsEl.textContent = "";
@@ -1034,6 +1089,9 @@ async function analyzeSelectedListing() {
       } closest matches for quick review.`;
     } else if (compsNoteEl && comps.length) {
       compsNoteEl.textContent = `Showing ${comps.length} closest matching sales.`;
+    }
+    if (expandedWindowUsed && compsNoteEl) {
+      compsNoteEl.textContent = `${compsNoteEl.textContent} We expanded the sold-comp lookback from 12 to 24 months because recent matches were limited.`;
     }
     const compQ = qualityFromCount(fullSetCount ?? summary.num_comps, 35, 12);
     setQualityChip(
